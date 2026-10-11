@@ -7,7 +7,10 @@ Shared example processes (arrival, burst):
     P4: arrival=3, burst=6
 """
 
-from os_sim.scheduler import fcfs, sjf, round_robin, priority_scheduling, effective_priority_score
+from os_sim.scheduler import (
+    fcfs, sjf, round_robin, priority_scheduling, effective_priority_score,
+    eevdf, mlfq, jains_fairness_index, run_schedule,
+)
 
 
 def make_processes():
@@ -112,3 +115,95 @@ def test_cpu_utilization_is_full_with_no_gaps():
     # No idle time between arrivals (P1 starts at 0 and each subsequent
     # process is ready before the previous finishes), so utilization is 100%.
     assert result["metrics"]["cpu_utilization"] == 100.0
+
+
+# ---------------------------------------------------------------------------
+# Jain's Fairness Index -- f(x) = (sum(x))^2 / (n * sum(x_i^2)), range [1/n, 1]
+# ---------------------------------------------------------------------------
+
+
+def test_jains_fairness_index_equal_allocation_is_one():
+    assert jains_fairness_index([10, 10, 10, 10]) == 1.0
+
+
+def test_jains_fairness_index_one_process_gets_everything():
+    n = 4
+    values = [40, 0, 0, 0]
+    assert jains_fairness_index(values) == 1 / n
+
+
+def test_jains_fairness_index_empty_is_zero():
+    assert jains_fairness_index([]) == 0.0
+
+
+def test_every_algorithm_reports_fairness_index():
+    for result in (
+        fcfs(make_processes()),
+        sjf(make_processes()),
+        priority_scheduling(make_processes()),
+        round_robin(make_processes()),
+        eevdf(make_processes()),
+        mlfq(make_processes()),
+    ):
+        assert "fairness_index" in result["metrics"]
+        assert 0.0 <= result["metrics"]["fairness_index"] <= 1.0
+
+
+# ---------------------------------------------------------------------------
+# EEVDF / MLFQ -- shape and basic sanity checks
+# ---------------------------------------------------------------------------
+
+
+def test_eevdf_produces_same_output_shape_and_conserves_burst_time():
+    result = eevdf(make_processes())
+    assert result["algorithm"] == "eevdf"
+    total_gantt = sum(s["end"] - s["start"] for s in result["gantt"])
+    assert total_gantt == sum(p["burst_time"] for p in make_processes())
+    assert set(result["order"]) == {1, 2, 3, 4}
+    assert len(result["metrics"]["per_process"]) == 4
+
+
+def test_mlfq_produces_same_output_shape_and_conserves_burst_time():
+    result = mlfq(make_processes())
+    assert result["algorithm"] == "mlfq"
+    total_gantt = sum(s["end"] - s["start"] for s in result["gantt"])
+    assert total_gantt == sum(p["burst_time"] for p in make_processes())
+    assert set(result["order"]) == {1, 2, 3, 4}
+
+
+def test_mlfq_demotes_long_job_below_short_jobs_response_time():
+    # A long job should fall to a lower queue after exhausting its
+    # allotment, so later-arriving short jobs are not forced to wait a
+    # full long-job burst behind it (unlike FCFS).
+    result = mlfq(make_processes(), base_quantum=4, num_queues=3, boost_interval=50)
+    m = {row["pid"]: row for row in result["metrics"]["per_process"]}
+    # P3 (burst=8) needs more than one quantum and gets demoted; P2 (burst=3)
+    # fits in a single quantum at the top queue and should finish quickly.
+    assert m[2]["completion_time"] < m[3]["completion_time"]
+
+
+def test_run_schedule_accepts_eevdf_and_mlfq():
+    assert run_schedule("eevdf", make_processes())["algorithm"] == "eevdf"
+    assert run_schedule("mlfq", make_processes())["algorithm"] == "mlfq"
+
+
+# ---------------------------------------------------------------------------
+# Fair-share decay term in effective_priority_score
+# ---------------------------------------------------------------------------
+
+
+def test_fair_share_penalizes_heavy_historical_consumer():
+    heavy = {"priority": "Medium", "deadline": None, "ready_since": None,
+             "memory_requirement": 0, "cpu_requirement": 0, "cumulative_cpu_time": 100.0}
+    light = {"priority": "Medium", "deadline": None, "ready_since": None,
+             "memory_requirement": 0, "cpu_requirement": 0, "cumulative_cpu_time": 0.0}
+    all_procs = [heavy, light]
+    assert effective_priority_score(heavy, all_processes=all_procs) < effective_priority_score(light, all_processes=all_procs)
+
+
+def test_fair_share_defaults_to_zero_when_no_usage_tracked():
+    # Backward compatibility: processes without cumulative_cpu_time behave
+    # exactly as before the fair-share term was added.
+    proc = {"priority": "Medium", "deadline": None, "ready_since": None,
+            "memory_requirement": 0, "cpu_requirement": 0}
+    assert effective_priority_score(proc) == effective_priority_score(proc, all_processes=[proc])

@@ -1,6 +1,9 @@
 from os_sim import process_manager
 from os_sim.resource_manager import ResourceManager
-from recovery.detector import detect_deadlock, detect_memory_failure, run_detection
+from recovery.detector import (
+    detect_deadlock, detect_memory_failure, run_detection,
+    ewma_flag, modified_zscore_flag, cusum_flag,
+)
 from recovery.recovery import recover_memory_failure, recover_deadlock
 
 
@@ -83,3 +86,44 @@ def test_recover_deadlock_terminates_lowest_priority_in_cycle():
     assert action["target_pid"] == p2["pid"]  # Low priority process is terminated.
     refreshed = process_manager.get_process(p2["pid"])
     assert refreshed["state"] == "TERMINATED"
+
+
+# ---------------------------------------------------------------------------
+# Statistical anomaly detection: EWMA, Modified Z-score, CUSUM
+# (research report, "Statistical detection beats thresholds" section, NIST
+# SEMATECH Handbook formulas). A stable sequence should never flag; a
+# sequence with an obvious sustained shift should flag for every method.
+# ---------------------------------------------------------------------------
+
+STABLE_HISTORY = [1.0, 1.02, 0.98, 1.01, 0.99, 1.0, 1.03, 0.97, 1.0, 1.02, 0.99, 1.0]
+ANOMALOUS_NEW_VALUE = 5.0  # a burst-ratio of 5x baseline -- an unmistakable shift
+
+
+def test_ewma_does_not_flag_stable_sequence():
+    flagged, _ = ewma_flag(STABLE_HISTORY, 1.01)
+    assert flagged is False
+
+
+def test_ewma_flags_anomalous_shift():
+    flagged, _ = ewma_flag(STABLE_HISTORY, ANOMALOUS_NEW_VALUE)
+    assert flagged is True
+
+
+def test_modified_zscore_does_not_flag_stable_sequence():
+    flagged, _ = modified_zscore_flag(STABLE_HISTORY, 1.01)
+    assert flagged is False
+
+
+def test_modified_zscore_flags_anomalous_shift():
+    flagged, _ = modified_zscore_flag(STABLE_HISTORY, ANOMALOUS_NEW_VALUE)
+    assert flagged is True
+
+
+def test_cusum_does_not_flag_stable_sequence():
+    flagged, _ = cusum_flag(STABLE_HISTORY, 1.01)
+    assert flagged is False
+
+
+def test_cusum_flags_anomalous_shift():
+    flagged, _ = cusum_flag(STABLE_HISTORY, ANOMALOUS_NEW_VALUE)
+    assert flagged is True

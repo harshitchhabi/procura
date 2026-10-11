@@ -62,3 +62,31 @@ def test_resources_endpoint():
     body = resp.json()
     assert "utilization" in body
     assert "cpu" in body["utilization"]
+
+
+def test_schedule_endpoint_accepts_eevdf():
+    client.post("/processes", json={"name": "EEVDF A", "burst_time": 5})
+    client.post("/processes", json={"name": "EEVDF B", "burst_time": 3, "priority": "High"})
+    resp = client.get("/schedule", params={"algorithm": "eevdf"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["algorithm"] == "eevdf"
+    assert "fairness_index" in body["metrics"]
+
+
+def test_schedule_endpoint_accepts_mlfq():
+    client.post("/processes", json={"name": "MLFQ A", "burst_time": 5})
+    client.post("/processes", json={"name": "MLFQ B", "burst_time": 3, "priority": "High"})
+    resp = client.get("/schedule", params={"algorithm": "mlfq"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["algorithm"] == "mlfq"
+    assert "fairness_index" in body["metrics"]
+
+
+def test_benchmark_endpoint_returns_all_six_algorithms():
+    resp = client.get("/benchmark", params={"n": 10})
+    assert resp.status_code == 200
+    body = resp.json()
+    algos = {row["algorithm"] for row in body["results"]}
+    assert algos == {"fcfs", "sjf", "priority", "round_robin", "eevdf", "mlfq"}

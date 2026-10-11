@@ -39,14 +39,24 @@ python -m cli.procura_top
 
 This renders a live, polling `htop`-style dashboard: a color-coded process table, resource utilization bars, and a scrolling "AI SYSTEM" feed of diagnosis/recovery events -- the same live simulation data as the web dashboard, viewed as a literal terminal process monitor.
 
-### 4. Tests
+### 4. Benchmarking
+
+```bash
+cd backend
+python -m benchmark.run_benchmark                 # synthetic Poisson workload, all 6 algorithms
+python -m benchmark.run_benchmark --swf benchmark/sample_traces/sample.swf   # replay a real-format SWF trace
+```
+
+Runs FCFS, SJF, Priority, Round Robin, EEVDF, and MLFQ against an identical workload and prints a comparison table (makespan, turnaround, waiting time, utilization, Jain's Fairness Index, starvation). See [`PAPER.md`](./PAPER.md) for a full write-up with real measured results and citations back to the research underlying these upgrades.
+
+### 5. Tests
 
 ```bash
 cd backend
 pytest tests/ -v
 ```
 
-36 tests cover the scheduler algorithms (against hand-worked textbook examples), process state-machine validation, resource allocation/over-capacity rejection, deadlock cycle detection (both a true circular-wait case and a non-circular negative case), and a handful of FastAPI `TestClient` smoke tests.
+67 tests cover the scheduler algorithms (FCFS/SJF/Priority/Round Robin against hand-worked textbook examples, plus EEVDF/MLFQ shape/sanity checks and Jain's Fairness Index), process state-machine validation, resource allocation/over-capacity rejection, deadlock cycle detection (both a true circular-wait case and a non-circular negative case), the new lock-ordering violation checker and timeout-based abort, the EWMA/Modified-Z-score/CUSUM statistical anomaly detectors, the benchmark module's SWF parser and metric functions, and a handful of FastAPI `TestClient` smoke tests (including the new `/benchmark` endpoint and `eevdf`/`mlfq` `/schedule` requests).
 
 ## Project structure
 
@@ -54,18 +64,25 @@ pytest tests/ -v
 procura/
 ├── backend/            FastAPI app, os_sim (scheduler/process/resource managers),
 │                        rag (offline TF-IDF retrieval + assistant), recovery
-│                        (detector/diagnosis/recovery), cli (procura_top), tests
+│                        (detector/diagnosis/recovery), benchmark (synthetic/SWF
+│                        workloads + standard metrics + run_benchmark), cli
+│                        (procura_top), tests
 ├── knowledge_base/     6 real, substantive OS-concepts reference documents
 │                        (the RAG system's source material)
+├── PAPER.md            Journal-style technical report: related work, system
+│                        design, benchmarking methodology, and real measured
+│                        results comparing all 6 scheduling algorithms
 └── frontend/           React + Vite + Tailwind + Recharts, dark "process monitor" UI
 ```
 
 ## Feature-to-OS-concept map (for portfolio / viva use)
 
 - **Process lifecycle & PCB (`os_sim/states.py`, `os_sim/process_manager.py`)** -- every task is a process with a strict, enforced state machine (NEW/READY/RUNNING/BLOCKED/COMPLETED/TERMINATED), mirroring the textbook process lifecycle and demonstrating why invalid transitions must be rejected to keep scheduler state consistent.
-- **CPU scheduling (`os_sim/scheduler.py`)** -- FCFS, SJF, Priority (with a documented multi-factor effective-priority score: user priority + deadline urgency + waiting-time aging + resource weight), and Round Robin, each producing real completion/turnaround/waiting/response-time metrics and Gantt-chart data, demonstrating the throughput-vs-fairness-vs-responsiveness tradeoffs between algorithms.
-- **Resource management & Banker's-algorithm-lite avoidance (`os_sim/resource_manager.py`)** -- five simulated resource pools (CPU/memory/file/database/network) with allocate/release, a waits-for graph, and an optional simplified Banker's-algorithm safety check, demonstrating both reactive detection and proactive avoidance of unsafe resource states.
-- **Deadlock detection (`os_sim/resource_manager.py::detect_cycle`, `recovery/detector.py`)** -- proper DFS-based cycle detection over the waits-for graph (not just pairwise checks), demonstrating the formal graph-theoretic definition of circular wait.
+- **CPU scheduling (`os_sim/scheduler.py`)** -- FCFS, SJF, Priority (with a documented multi-factor effective-priority score: user priority + deadline urgency + waiting-time aging + resource weight + a Slurm-style decaying fair-share penalty), Round Robin, **EEVDF** (Linux's actual scheduler since kernel 6.6, implemented via per-process weight/vruntime/eligibility and a `heapq`-based earliest-virtual-deadline dispatch), and **MLFQ** (OSTEP's canonical multi-level feedback queue with cumulative per-level allotment accounting and periodic priority boost) -- six algorithms total, each producing real completion/turnaround/waiting/response-time metrics, Gantt-chart data, and a **Jain's Fairness Index** on every run, demonstrating the throughput-vs-fairness-vs-responsiveness tradeoffs between algorithms quantitatively, not just impressionistically.
+- **Resource management & deadlock avoidance (`os_sim/resource_manager.py`)** -- five simulated resource pools (CPU/memory/file/database/network) with allocate/release, a waits-for graph, the original Banker's-algorithm-lite safety check (kept, but explicitly documented as the textbook baseline that production systems don't actually use), plus two production-grade mechanisms added alongside it: a **lockdep-style lock-ordering violation checker** (canonical resource-acquisition order, violations logged not blocked) and **timeout-based wait abort** (MySQL `innodb_lock_wait_timeout`-style).
+- **Deadlock detection (`os_sim/resource_manager.py::detect_cycle`, `recovery/detector.py`)** -- proper DFS-based cycle detection over the waits-for graph (not just pairwise checks), demonstrating the formal graph-theoretic definition of circular wait, framed as the expensive-but-precise tier of a cost/precision spectrum alongside lock-ordering and timeout-based abort.
+- **Statistical anomaly detection (`recovery/detector.py`)** -- EWMA, Modified Z-score, and CUSUM (all three NIST-SEMATECH-specified formulas), replacing/supplementing the original fixed-threshold "1.5x burst time" rule with a rolling-baseline statistical approach, selectable per detection call.
+- **Benchmarking (`backend/benchmark/`)** -- a synthetic Poisson-arrival/Gamma-burst workload generator, a Standard Workload Format (SWF) trace parser, and `run_benchmark.py`, which replays an identical workload through all six scheduling algorithms and reports makespan/turnaround/waiting/utilization/fairness/starvation. See [`PAPER.md`](./PAPER.md) for full methodology and real results.
 - **Offline-first RAG assistant (`rag/`)** -- a hand-rolled TF-IDF + cosine-similarity retriever (zero heavy ML dependencies) over real OS-concept documents, with an optional live-LLM path if an API key is set and a clearly-labeled deterministic extractive fallback otherwise, demonstrating retrieval-augmented, grounded (non-hallucinated) explanation.
 - **Automated error recovery (`recovery/`)** -- detection (burst-time anomaly, memory failure, deadlock) → diagnosis (RAG-grounded plain-language explanation) → rule-based recovery script (suspend-and-retry, stop-and-retry, restart, terminate-and-resume), fully logged to SQLite, demonstrating how a real OS treats failure as a normal, recoverable condition rather than an exception to propagate.
 - **`procura_top` terminal dashboard (`cli/procura_top.py`)** -- a `rich`-based live TUI polling the same REST API as the web frontend, demonstrating that the underlying simulation is a real backend service, not something coupled to a single UI.

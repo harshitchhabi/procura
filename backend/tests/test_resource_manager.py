@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 from os_sim.resource_manager import ResourceManager
 
 
@@ -87,3 +89,59 @@ def test_avoidance_mode_denies_unsafe_allocation():
     result = rm.allocate(pid=3, resource="memory", amount=1600)
     assert result["success"] is False
     assert result["reason"] == "unsafe_state"
+
+
+# ---------------------------------------------------------------------------
+# Lock-ordering violation checker (lockdep-style)
+# Canonical order per RESOURCE_NAMES: cpu < memory < file < database < network
+# ---------------------------------------------------------------------------
+
+
+def test_lock_order_violation_detected_when_acquiring_out_of_order():
+    rm = ResourceManager()
+    # pid holds 'database' (order 3) then requests 'cpu' (order 0) -- out of order.
+    rm.allocate(pid=1, resource="database", amount=5)
+    violation = rm.check_lock_order_violation(1, "cpu")
+    assert violation is not None
+    assert violation["requested"] == "cpu"
+    assert "database" in violation["held_out_of_order"]
+    assert len(rm.lock_order_log) == 1
+
+
+def test_no_lock_order_violation_when_acquiring_in_order():
+    rm = ResourceManager()
+    # pid holds 'cpu' (order 0) then requests 'memory' (order 1) -- in order.
+    rm.allocate(pid=1, resource="cpu", amount=10)
+    violation = rm.check_lock_order_violation(1, "memory")
+    assert violation is None
+    assert rm.lock_order_log == []
+
+
+# ---------------------------------------------------------------------------
+# Timeout-based abort
+# ---------------------------------------------------------------------------
+
+
+def test_timeout_based_abort_clears_long_running_wait():
+    rm = ResourceManager(timeout_seconds=1.0)
+    rm.allocate(pid=1, resource="cpu", amount=100)
+    rm.allocate(pid=2, resource="cpu", amount=10)  # pid 2 now waits for pid 1
+    assert 2 in rm.waits_for
+
+    # Simulate the wait having started well over timeout_seconds ago.
+    rm.wait_since[2] = datetime.now() - timedelta(seconds=5)
+    aborted = rm.check_timeouts()
+
+    assert len(aborted) == 1
+    assert aborted[0]["pid"] == 2
+    assert aborted[0]["action_type"] == "timeout_based_abort"
+    assert 2 not in rm.waits_for
+
+
+def test_timeout_based_abort_does_not_fire_before_timeout():
+    rm = ResourceManager(timeout_seconds=30.0)
+    rm.allocate(pid=1, resource="cpu", amount=100)
+    rm.allocate(pid=2, resource="cpu", amount=10)
+    aborted = rm.check_timeouts()
+    assert aborted == []
+    assert 2 in rm.waits_for

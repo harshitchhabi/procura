@@ -7,6 +7,8 @@ const ALGORITHMS = [
   { value: "sjf", label: "SJF" },
   { value: "priority", label: "Priority" },
   { value: "round_robin", label: "Round Robin" },
+  { value: "eevdf", label: "EEVDF" },
+  { value: "mlfq", label: "MLFQ" },
 ];
 
 const PALETTE = ["#39ff88", "#ffb84d", "#5ec8ff", "#ff5c5c", "#c27bff", "#ffe066", "#7bffe0", "#ff9de0"];
@@ -26,7 +28,8 @@ export default function Scheduler() {
     setLoading(true);
     setError(null);
     try {
-      const data = await api.getSchedule(algorithm, algorithm === "round_robin" ? quantum : undefined);
+      const usesQuantum = algorithm === "round_robin" || algorithm === "eevdf" || algorithm === "mlfq";
+      const data = await api.getSchedule(algorithm, usesQuantum ? quantum : undefined);
       setResult(data);
     } catch (err) {
       setError(err.message);
@@ -65,7 +68,7 @@ export default function Scheduler() {
             ))}
           </select>
         </div>
-        {algorithm === "round_robin" && (
+        {(algorithm === "round_robin" || algorithm === "eevdf" || algorithm === "mlfq") && (
           <div>
             <label className="block text-term-dim text-xs mb-1">Quantum</label>
             <input
@@ -121,6 +124,9 @@ export default function Scheduler() {
               <MetricTile label="Avg Turnaround" value={`${result.metrics.average_turnaround_time} min`} />
               <MetricTile label="Avg Response" value={`${result.metrics.average_response_time} min`} />
               <MetricTile label="CPU Utilization" value={`${result.metrics.cpu_utilization}%`} />
+              {result.metrics.fairness_index !== undefined && (
+                <MetricTile label="Jain's Fairness Index" value={result.metrics.fairness_index} />
+              )}
             </div>
             <table className="w-full text-xs">
               <thead>

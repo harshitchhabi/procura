@@ -15,6 +15,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 import database
+from benchmark import metrics as bench_metrics
+from benchmark import workload as bench_workload
 from os_sim import process_manager, scheduler
 from os_sim.process_manager import ProcessNotFoundError
 from os_sim.resource_manager import RESOURCE_NAMES, ResourceManager
@@ -176,6 +178,23 @@ def get_schedule(algorithm: str = "fcfs", quantum: int = 4) -> dict[str, Any]:
 @app.post("/schedule")
 def post_schedule(algorithm: str = "fcfs", quantum: int = 4) -> dict[str, Any]:
     return _run_schedule(algorithm, quantum)
+
+
+@app.get("/benchmark")
+def get_benchmark(n: int = 24, arrival_rate: float = 0.3, seed: int = 42, quantum: int = 4) -> dict[str, Any]:
+    """Run all six scheduling algorithms against an identical synthetic
+    workload (Poisson arrivals, research report's "field-standard
+    synthetic alternative") and return the standard comparison metrics
+    (backend/benchmark/metrics.py) as JSON. Kept small (default 24 jobs)
+    so it stays fast enough for a single HTTP request.
+    """
+    n = max(1, min(n, 60))
+    processes = bench_workload.generate_poisson_workload(n=n, arrival_rate=arrival_rate, seed=seed)
+    rows = []
+    for algo in ("fcfs", "sjf", "priority", "round_robin", "eevdf", "mlfq"):
+        result = scheduler.run_schedule(algo, [dict(p) for p in processes], quantum=quantum)
+        rows.append(bench_metrics.summarize(result))
+    return {"workload_size": n, "arrival_rate": arrival_rate, "seed": seed, "results": rows}
 
 
 # ---------------------------------------------------------------------------
