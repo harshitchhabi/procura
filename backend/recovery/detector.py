@@ -238,6 +238,8 @@ def run_detection(
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     for proc in processes:
+        if proc.get("state") in ("COMPLETED", "TERMINATED"):
+            continue
         mem_issue = detect_memory_failure(proc, resource_mgr)
         if mem_issue:
             findings.append(mem_issue)

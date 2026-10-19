@@ -180,3 +180,15 @@ def test_recover_memory_failure_increments_error_count():
     recover_memory_failure({"pid": proc["pid"]}, rm)
 
     assert process_manager.get_process(proc["pid"])["error_count"] == 1
+
+
+def test_run_detection_ignores_finished_processes():
+    rm = ResourceManager()
+    rm.allocate(pid=999, resource="memory", amount=2000)
+    proc = process_manager.create_process(name="Already done", burst_time=10, memory_requirement=500)
+    process_manager.terminate_process(proc["pid"])
+    finished = process_manager.get_process(proc["pid"])
+
+    findings = run_detection([finished], rm)
+
+    assert not any(f["error_type"] == "memory_failure" for f in findings)
