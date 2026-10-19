@@ -170,3 +170,13 @@ def test_recover_memory_failure_retries_when_memory_freed_since_detection():
 
     assert result["action_type"] == "retry"
     assert rm.holders["memory"].get(proc["pid"]) == 256
+
+
+def test_recover_memory_failure_increments_error_count():
+    rm = ResourceManager()
+    rm.allocate(999, "memory", 2000)
+    proc = process_manager.create_process(name="Counts its failures", burst_time=5, memory_requirement=500)
+
+    recover_memory_failure({"pid": proc["pid"]}, rm)
+
+    assert process_manager.get_process(proc["pid"])["error_count"] == 1

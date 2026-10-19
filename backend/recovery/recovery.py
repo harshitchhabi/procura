@@ -40,6 +40,10 @@ def _lowest_priority_pid(pids: list[int], exclude: Optional[int] = None) -> Opti
 
 def recover_memory_failure(finding: dict[str, Any], resource_mgr: ResourceManager) -> dict[str, Any]:
     failing_pid = finding["pid"]
+    try:
+        process_manager.increment_error_count(failing_pid)
+    except Exception:
+        pass
 
     # Findings are snapshotted before any recovery runs, so an earlier recovery
     # in the same pass may already have freed enough memory: retry first.

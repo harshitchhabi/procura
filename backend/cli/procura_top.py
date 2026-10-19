@@ -84,7 +84,7 @@ def build_resource_panel(resources: dict) -> Panel:
         bar_color = "green" if pct < 60 else ("yellow" if pct < 85 else "red")
         bar = ProgressBar(total=100, completed=min(pct, 100), width=30, complete_style=bar_color)
         label = Text(f"{name.upper():10}", style="bold")
-        console_line = Group(label, bar, Text(f" {pct:5.1f}%  ({stats.get('allocated', 0)}/{stats.get('capacity', 0)})"))
+        console_line = Group(label, bar, Text(f" {pct:5.1f}%  ({stats.get('allocated', 0):g}/{stats.get('capacity', 0):g})"))
         lines.append(console_line)
 
     waits = resources.get("waiting_for_graph", {}) if resources else {}
