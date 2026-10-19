@@ -1,0 +1,33 @@
+Advanced CPU Scheduling: CFS, EEVDF, MLFQ, Aging, Fairness and Fair-Share
+
+Production operating systems no longer use the four textbook algorithms (FCFS, SJF, Priority, Round Robin) directly. Linux used the Completely Fair Scheduler (CFS) from kernel 2.6.23 in 2007 until it was replaced by EEVDF in kernel 6.6 (2023/2024). Both aim to give every runnable task a weighted fair share of the CPU rather than following one fixed order.
+
+The Completely Fair Scheduler (CFS) keeps runnable tasks in a red-black tree keyed by virtual runtime (vruntime) and always runs the leftmost task, the one with the smallest vruntime. vruntime grows as delta_exec * NICE_0_LOAD / weight, so a higher-weight task's vruntime grows more slowly and it receives a larger share of CPU time. Weight is derived from the nice value, approximately Weight = 1024 / 1.25^nice (nice 0 maps to weight 1024).
+
+EEVDF stands for Earliest Eligible Virtual Deadline First. It is the default Linux scheduler since kernel 6.6 and is based on a 1995 algorithm by Stoica and Abdel-Wahab. EEVDF is not a priority-label scheduler: it tracks each task's lag, the difference between the CPU time the task should have received under an ideal fair-share schedule and the time it actually received.
+
+In EEVDF a task with lag greater than or equal to zero is eligible, meaning it is owed CPU time. Among eligible tasks, EEVDF always dispatches the one with the earliest virtual deadline, computed as its eligible time plus a time slice scaled by its weight. Tasks may request a shorter slice to get earlier deadlines. Compared with Round Robin, which gives every task an identical quantum in rotation, EEVDF gives each task a share proportional to its weight while bounding how far any task can fall behind its fair share.
+
+EEVDF versus Round Robin: Round Robin treats all ready tasks identically and cycles through them with a fixed quantum, so every task waits at most (n - 1) * quantum between turns. EEVDF is weighted: a high-weight task is dispatched more often than a low-weight one, yet a low-weight task is never starved because its lag grows until it becomes eligible again. Round Robin is equal sharing; EEVDF is weighted fair sharing.
+
+In Procura, EEVDF maps task priority to a nice value (High = -5, Medium = 0, Low = +5), converts it to a weight with 1024 / 1.25^nice, tracks lag against the ideal fair share, and uses a min-heap to dispatch the eligible task with the earliest virtual deadline, analogous to the kernel's tree. High-priority tasks therefore receive more frequent slices while low-priority tasks still progress.
+
+The Multi-Level Feedback Queue (MLFQ), as specified in Operating Systems: Three Easy Pieces (OSTEP), follows five rules. Rule 1: if priority(A) is greater than priority(B), A runs. Rule 2: if priorities are equal, A and B run in round robin. Rule 3: a new job enters the topmost (highest) priority queue. Rule 4: once a job uses up its time allotment at a level, it is demoted one level. Rule 5: after a period S, all jobs are boosted back to the topmost queue.
+
+MLFQ infers a job's behaviour instead of requiring its length in advance: short and interactive jobs finish while still in high-priority queues, while long CPU-bound jobs sink to lower queues. The periodic priority boost (Rule 5) bounds starvation. MLFQ's "better accounting" rule tracks the cumulative time a job uses at a level instead of resetting it whenever the job yields, which closes a gaming exploit where a job yields just before its quantum expires to stay at high priority forever.
+
+In Procura, MLFQ uses three queues, a base quantum of 4 minutes that doubles at each lower level (4, 8, 16), cumulative per-level accounting, and a priority boost every 50 minutes of simulated time.
+
+Starvation and fairness guarantees differ by algorithm. FCFS, SJF and static Priority have no starvation bound: under continuous arrival of short or high-priority jobs, a long or low-priority job can wait indefinitely, and non-preemptive policies also suffer the convoy effect, where one long job delays many short ones. Round Robin bounds the wait between turns at (n - 1) * quantum. MLFQ bounds starvation by its boost interval S. CFS and EEVDF bound it structurally by correcting divergence from the ideal fair share.
+
+Aging prevents starvation in priority scheduling by raising a task's effective priority the longer it waits. Procura's effective priority score adds five terms: user priority (High 90, Medium 50, Low 20), deadline urgency (0 to 100, rising as a deadline approaches within 48 hours, 100 once it has passed), waiting-time aging (2 points per minute in READY, capped at 100), resource requirement (up to 60 for memory and 40 for CPU), and a fair-share penalty.
+
+Jain's Fairness Index measures how evenly a resource is allocated: J = (sum of x_i)^2 / (n * sum of x_i^2). Its range is 1/n to 1, not 0 to 1. A value of 1 means every one of the n entities received an identical share; 1/n means one entity received everything. It originates from a 1984 DEC technical report by Jain, Chiu and Hawe. Procura computes it for every scheduling algorithm over each task's allocated CPU time.
+
+Jain's Fairness Index limitation in Procura: because every Procura algorithm eventually runs every task to completion, each task always receives exactly its burst time of CPU, so the index over total allocation is identical for all six algorithms on the same workload. It measures fairness of how much each task gets in total, not fairness of when it gets it. Waiting time and response time show the real differences between algorithms.
+
+Slurm fair-share scheduling, used on HPC clusters, computes job priority as a weighted sum of normalised factors such as age, fair-share, job size, QOS and partition. The fair-share factor lowers the priority of accounts that have consumed more than their share of historical usage, and that usage decays over time with a configurable half-life (PriorityDecayHalfLife), so old usage matters less than recent usage.
+
+Procura applies Slurm-style fair-share per task: each task's consumed CPU time decays with a 60-minute half-life (decay = 0.5 ^ (age / half_life)), is compared with an equal 1/n share of total decayed usage, and a task that has used more than its fair share receives a penalty of up to 100 points on its effective priority.
+
+Shortest-Job-First (SJF) minimises average waiting time among non-preemptive policies, but it must choose among jobs that have already arrived; it never leaves the CPU idle while a job is waiting. Its weakness is starvation of long jobs, which can be overtaken repeatedly by shorter ones, so SJF often has the lowest average waiting time but a higher maximum waiting time than FCFS.

@@ -1,0 +1,15 @@
+Statistical Anomaly Detection: EWMA, Modified Z-score and CUSUM
+
+A fixed threshold rule, such as flagging a task whose run time exceeds 1.5 times its expected burst time, is simple but arbitrary: it ignores how variable the task normally is, fires on single noisy values, and gives no principled way to choose the threshold. Statistical process control (SPC) methods instead compare a new value against the observed behaviour of a baseline, and they are the same family of methods behind the anomaly bands in Prometheus, Grafana and AWS CloudWatch.
+
+The Exponentially Weighted Moving Average (EWMA) control chart, as specified by the NIST/SEMATECH Engineering Statistics Handbook, smooths a series with EWMA_t = lambda * Y_t + (1 - lambda) * EWMA_(t-1). Control limits are EWMA_0 plus or minus k * s_ewma, where s_ewma^2 = (lambda / (2 - lambda)) * s^2. Conventional choices are lambda between 0.2 and 0.3 and k = 3. EWMA is good at detecting small, sustained shifts.
+
+The Modified Z-score uses the median and the median absolute deviation (MAD) instead of the mean and standard deviation: M_i = 0.6745 * (x_i - median) / MAD, and a value is flagged as an outlier when the absolute modified Z-score exceeds 3.5. NIST recommends it over the naive Z-score rule (flag when |Z| is greater than 2 or 3) because the mean and standard deviation are themselves distorted by the outliers being detected, whereas the median and MAD are robust to them.
+
+CUSUM, the cumulative sum control chart, detects a persistent shift by accumulating deviations from a target: S_hi = max(0, S_hi_prev + (x_i - target - k)) and S_lo = max(0, S_lo_prev - (x_i - target + k)). A shift is flagged when either sum crosses a decision interval h. The reference value k and interval h can be derived from the smallest shift worth detecting and the acceptable false-alarm and miss rates.
+
+A known caveat when applying SPC to IT systems is that the stable-mean assumption often fails for bursty workloads, which causes false positives. A rolling baseline window that re-baselines over recent values reduces this problem.
+
+Procura's detector keeps a rolling window of the last 30 ratios of actual time to expected burst time for each task. It supports four selectable methods: ewma (default, lambda 0.25, k 3), modified_zscore (threshold 3.5), cusum (shift of 1 sigma, decision interval of 5 sigma), and the original fixed_threshold rule, kept only for comparison. Memory-allocation failures and deadlocks are detected directly, not statistically: a memory request larger than available memory, and a cycle in the wait-for graph.
+
+Production AIOps platforms follow the same two-layer pattern: statistical detection of anomalies first, then correlation and root-cause diagnosis. Datadog Watchdog provides always-on anomaly detection plus a root cause analysis feature, Dynatrace Davis AI uses causal fault-tree analysis over topology data, and New Relic combines proactive detection with incident correlation.

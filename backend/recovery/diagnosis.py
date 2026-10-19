@@ -7,7 +7,7 @@ from typing import Any, Optional
 from rag.assistant import answer_question
 
 SOURCE_MAP = {
-    "burst_anomaly": ["CPU_Scheduling", "Error_Recovery"],
+    "burst_anomaly": ["Anomaly_Detection", "CPU_Scheduling", "Error_Recovery"],
     "memory_failure": ["Memory_Management", "Error_Recovery"],
     "deadlock": ["Deadlocks", "Error_Recovery"],
     "timeout": ["CPU_Scheduling", "Error_Recovery"],
