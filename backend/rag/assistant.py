@@ -37,7 +37,20 @@ def _format_process_context(process: Optional[dict[str, Any]]) -> str:
     return "Process context: " + ", ".join(lines)
 
 
-def _build_prompt(question: str, chunks: list[SearchResult], process: Optional[dict[str, Any]]) -> str:
+def _format_incident_facts(incident_facts: Optional[list[str]]) -> str:
+    if not incident_facts:
+        return "Incident facts: none recorded for this process."
+    return "Incident facts (authoritative, from Procura's own logs):\n" + "\n".join(
+        f"- {fact}" for fact in incident_facts
+    )
+
+
+def _build_prompt(
+    question: str,
+    chunks: list[SearchResult],
+    process: Optional[dict[str, Any]],
+    incident_facts: Optional[list[str]] = None,
+) -> str:
     context_blocks = "\n\n".join(
         f"[Source: {r.chunk.source}]\n{r.chunk.text}" for r in chunks
     ) or "No relevant knowledge-base excerpts were found."
@@ -45,8 +58,13 @@ def _build_prompt(question: str, chunks: list[SearchResult], process: Optional[d
         "You are Procura's system assistant, an OS-concepts tutor embedded in a "
         "process-scheduling simulator. Answer the user's question using the "
         "knowledge-base excerpts and live process context below. Be concise, "
-        "accurate, and explain the underlying OS concept clearly.\n\n"
+        "accurate, and explain the underlying OS concept clearly. Treat the "
+        "incident facts as ground truth about what happened in this simulation: "
+        "state causes and actions only as they appear there, and use the "
+        "knowledge-base excerpts to explain the concept, not to invent extra "
+        "causes (such as fragmentation) that the facts do not show.\n\n"
         f"{_format_process_context(process)}\n\n"
+        f"{_format_incident_facts(incident_facts)}\n\n"
         f"Knowledge base excerpts:\n{context_blocks}\n\n"
         f"Question: {question}\n\nAnswer:"
     )
@@ -121,7 +139,12 @@ def _call_openai(prompt: str, api_key: str) -> Optional[str]:
         return None
 
 
-def _extractive_fallback(question: str, chunks: list[SearchResult], process: Optional[dict[str, Any]]) -> str:
+def _extractive_fallback(
+    question: str,
+    chunks: list[SearchResult],
+    process: Optional[dict[str, Any]],
+    incident_facts: Optional[list[str]] = None,
+) -> str:
     if not chunks:
         return (
             "[OFFLINE MODE - extractive answer]\n"
@@ -143,6 +166,9 @@ def _extractive_fallback(question: str, chunks: list[SearchResult], process: Opt
     if process:
         lines.append("")
         lines.append(_format_process_context(process))
+    if incident_facts:
+        lines.append("")
+        lines.append(_format_incident_facts(incident_facts))
     lines.append("")
     lines.append(
         "To get a fully generated, conversational answer instead of these excerpts, "
@@ -156,6 +182,7 @@ def answer_question(
     process: Optional[dict[str, Any]] = None,
     top_k: int = 3,
     source_filter: list[str] | None = None,
+    incident_facts: list[str] | None = None,
 ) -> dict[str, Any]:
     chunks = search(question, top_k=top_k, source_filter=source_filter)
     sources = [{"source": r.chunk.source, "score": round(r.score, 3), "excerpt": r.chunk.text[:200]} for r in chunks]
@@ -164,23 +191,21 @@ def answer_question(
     anthropic_key = os.getenv("ANTHROPIC_API_KEY")
     openai_key = os.getenv("OPENAI_API_KEY")
 
+    prompt = _build_prompt(question, chunks, process, incident_facts)
     generated: Optional[str] = None
     mode = "offline_extractive"
     if groq_key:
-        prompt = _build_prompt(question, chunks, process)
         generated = _call_groq(prompt, groq_key)
         if generated:
             mode = "groq"
     if generated is None and anthropic_key:
-        prompt = _build_prompt(question, chunks, process)
         generated = _call_anthropic(prompt, anthropic_key)
         if generated:
             mode = "anthropic"
     if generated is None and openai_key:
-        prompt = _build_prompt(question, chunks, process)
         generated = _call_openai(prompt, openai_key)
         if generated:
             mode = "openai"
 
-    answer = generated if generated else _extractive_fallback(question, chunks, process)
+    answer = generated if generated else _extractive_fallback(question, chunks, process, incident_facts)
     return {"answer": answer, "mode": mode, "sources": sources}

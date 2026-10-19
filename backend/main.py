@@ -274,15 +274,45 @@ def detect() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def _incident_facts_for(pid: int, limit: int = 3) -> list[str]:
+    """Ground /ask in what actually happened to this process, so the LLM explains
+    recorded causes instead of guessing plausible-sounding ones."""
+    facts = []
+    involved = [
+        row for row in database.get_error_log()
+        if row["pid"] == pid or row["target_pid"] == pid
+    ][:limit]
+    for row in involved:
+        if row["pid"] == pid:
+            fact = f"{row['error_type']} at {row['detected_at']}: {row['raw_details']}"
+            if row["action_type"]:
+                fact += f" Recovery executed: {row['action_type']} targeting pid {row['target_pid']}."
+        else:
+            fact = (
+                f"This process was the target of recovery action {row['action_type']} "
+                f"taken to resolve {row['error_type']} for pid {row['pid']}."
+            )
+        facts.append(fact)
+    mem = resource_manager.utilization()["memory"]
+    facts.append(
+        f"Current simulated memory (now, after any recovery actions above; not at the time "
+        f"of the failure): {mem['allocated']} of {mem['capacity']} MB allocated, "
+        f"{mem['available']} MB available."
+    )
+    return facts
+
+
 @app.post("/ask")
 def ask(body: AskRequest) -> dict[str, Any]:
     process = None
+    incident_facts = None
     if body.pid is not None:
         try:
             process = process_manager.get_process(body.pid)
+            incident_facts = _incident_facts_for(body.pid)
         except ProcessNotFoundError:
             process = None
-    return answer_question(body.question, process=process)
+    return answer_question(body.question, process=process, incident_facts=incident_facts)
 
 
 # ---------------------------------------------------------------------------

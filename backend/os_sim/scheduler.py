@@ -321,18 +321,46 @@ def fcfs(processes: list[dict[str, Any]]) -> dict[str, Any]:
     return _run_nonpreemptive(processes, order, "fcfs")
 
 
+def _arrival_aware_order(processes: list[dict[str, Any]], key) -> list[dict[str, Any]]:
+    """Non-preemptive dispatch order: at each decision point pick the best job
+    (lowest `key`) among those that have already arrived; the CPU only idles
+    when nothing has arrived yet. Pre-sorting the whole list instead would
+    idle the CPU waiting for a late-arriving job while others are ready."""
+    arrivals = _relative_arrivals(processes)
+    pending = sorted(processes, key=lambda p: (arrivals.get(p["pid"], 0.0), p["pid"]))
+    order: list[dict[str, Any]] = []
+    clock = 0.0
+    while pending:
+        ready = [p for p in pending if arrivals.get(p["pid"], 0.0) <= clock]
+        if not ready:
+            clock = arrivals.get(pending[0]["pid"], 0.0)
+            continue
+        nxt = min(ready, key=key)
+        order.append(nxt)
+        pending.remove(nxt)
+        clock = max(clock, arrivals.get(nxt["pid"], 0.0)) + nxt.get("burst_time", 0)
+    return order
+
+
 def sjf(processes: list[dict[str, Any]]) -> dict[str, Any]:
-    """Shortest Job First (non-preemptive): dispatch by ascending burst time."""
-    order = sorted(processes, key=lambda p: (p.get("burst_time", 0), p["pid"]))
+    """Shortest Job First (non-preemptive): among arrived jobs, dispatch the shortest burst."""
+    arrivals = _relative_arrivals(processes)
+    order = _arrival_aware_order(
+        processes, key=lambda p: (p.get("burst_time", 0), arrivals.get(p["pid"], 0.0), p["pid"])
+    )
     return _run_nonpreemptive(processes, order, "sjf")
 
 
 def priority_scheduling(processes: list[dict[str, Any]], now: Optional[datetime] = None) -> dict[str, Any]:
     """Priority scheduling by descending effective_priority_score."""
     now = now or datetime.now(timezone.utc).replace(tzinfo=None)
-    order = sorted(processes, key=lambda p: (-effective_priority_score(p, now, processes), p["pid"]))
+    arrivals = _relative_arrivals(processes)
+    scores = {p["pid"]: effective_priority_score(p, now, processes) for p in processes}
+    order = _arrival_aware_order(
+        processes, key=lambda p: (-scores[p["pid"]], arrivals.get(p["pid"], 0.0), p["pid"])
+    )
     result = _run_nonpreemptive(processes, order, "priority")
-    scores = {p["pid"]: round(effective_priority_score(p, now, processes), 2) for p in processes}
+    scores = {pid: round(s, 2) for pid, s in scores.items()}
     for pp in result["metrics"]["per_process"]:
         pp["effective_priority_score"] = scores.get(pp["pid"])
     return result

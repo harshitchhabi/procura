@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Bar, BarChart, CartesianGrid, Cell, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import api from "../api.js";
 
 const ALGORITHMS = [
@@ -43,13 +42,18 @@ export default function Scheduler() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const chartData = (result?.gantt || []).map((slice, idx) => ({
-    row: `${idx}: P${slice.pid}`,
-    name: slice.name,
-    pid: slice.pid,
-    start: slice.start,
-    duration: slice.end - slice.start,
-  }));
+  const slices = result?.gantt || [];
+  const makespan = Math.max(1, ...slices.map((s) => s.end));
+  const lanes = [];
+  for (const s of slices) {
+    let lane = lanes.find((l) => l.pid === s.pid);
+    if (!lane) {
+      lane = { pid: s.pid, name: s.name, slices: [] };
+      lanes.push(lane);
+    }
+    lane.slices.push(s);
+  }
+  const ticks = Array.from({ length: 6 }, (_, i) => Math.round((makespan * i) / 5));
 
   return (
     <div className="space-y-4">
@@ -93,28 +97,51 @@ export default function Scheduler() {
       {result && (
         <>
           <section className="border border-term-border bg-term-panel rounded p-4">
-            <div className="text-term-green text-xs font-bold tracking-wider mb-3">
-              GANTT CHART ({result.algorithm.toUpperCase()})
+            <div className="flex items-baseline justify-between mb-3">
+              <div className="text-term-green text-xs font-bold tracking-wider">
+                GANTT CHART ({result.algorithm.toUpperCase()})
+              </div>
+              <div className="text-term-dim text-xs">
+                {slices.length} dispatch slices · {slices.length - lanes.length} preemptions · makespan {makespan} min
+              </div>
             </div>
-            <ResponsiveContainer width="100%" height={Math.max(200, chartData.length * 36)}>
-              <BarChart data={chartData} layout="vertical" margin={{ left: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1f2b24" horizontal={false} />
-                <XAxis type="number" stroke="#5c6b63" tick={{ fontSize: 11, fill: "#5c6b63" }} />
-                <YAxis type="category" dataKey="row" stroke="#5c6b63" tick={{ fontSize: 11, fill: "#c9d6cf" }} width={70} />
-                <Tooltip
-                  contentStyle={{ background: "#0f1512", border: "1px solid #1f2b24", fontSize: 12 }}
-                  formatter={(value, name, props) =>
-                    name === "duration" ? [`${value} min`, props.payload.name] : [value, name]
-                  }
-                />
-                <Bar dataKey="start" stackId="a" fill="transparent" />
-                <Bar dataKey="duration" stackId="a">
-                  {chartData.map((d, i) => (
-                    <Cell key={i} fill={colorForPid(d.pid)} />
+            <div className="space-y-1.5">
+              {lanes.map((lane) => (
+                <div key={lane.pid} className="flex items-center gap-3">
+                  <div className="w-56 shrink-0 truncate text-xs text-term-text" title={lane.name}>
+                    P{lane.pid} · {lane.name}
+                  </div>
+                  <div className="relative flex-1 h-6 bg-term-bg border border-term-border rounded">
+                    {lane.slices.map((s, i) => (
+                      <div
+                        key={i}
+                        title={`P${lane.pid} ${s.start}–${s.end} min`}
+                        className="absolute top-0.5 bottom-0.5 rounded-sm"
+                        style={{
+                          left: `${(s.start / makespan) * 100}%`,
+                          width: `max(2px, ${((s.end - s.start) / makespan) * 100}%)`,
+                          background: colorForPid(lane.pid),
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <div className="flex items-center gap-3">
+                <div className="w-56 shrink-0" />
+                <div className="relative flex-1 h-5 text-[10px] text-term-dim">
+                  {ticks.map((t, i) => (
+                    <span
+                      key={i}
+                      className="absolute -translate-x-1/2"
+                      style={{ left: `${(t / makespan) * 100}%` }}
+                    >
+                      {t}
+                    </span>
                   ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
           </section>
 
           <section className="border border-term-border bg-term-panel rounded p-4">

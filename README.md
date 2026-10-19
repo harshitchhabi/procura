@@ -28,6 +28,16 @@ npm run dev
 
 Open `http://localhost:5173`. The frontend talks to the backend at `http://localhost:8000` (CORS is pre-configured).
 
+**Port 8000 already in use?** Run the backend on another port and point the frontend and terminal dashboard at it:
+
+```bash
+uvicorn main:app --port 8010                       # backend
+VITE_API_URL=http://localhost:8010 npm run dev     # frontend
+PROCURA_API_URL=http://localhost:8010 python -m cli.procura_top
+```
+
+(On Windows PowerShell, set the variable first: `$env:VITE_API_URL="http://localhost:8010"; npm run dev`.)
+
 ### 3. Terminal dashboard (the differentiator)
 
 With the backend running, in a separate terminal:
@@ -56,7 +66,9 @@ cd backend
 pytest tests/ -v
 ```
 
-67 tests cover the scheduler algorithms (FCFS/SJF/Priority/Round Robin against hand-worked textbook examples, plus EEVDF/MLFQ shape/sanity checks and Jain's Fairness Index), process state-machine validation, resource allocation/over-capacity rejection, deadlock cycle detection (both a true circular-wait case and a non-circular negative case), the new lock-ordering violation checker and timeout-based abort, the EWMA/Modified-Z-score/CUSUM statistical anomaly detectors, the benchmark module's SWF parser and metric functions, and a handful of FastAPI `TestClient` smoke tests (including the new `/benchmark` endpoint and `eevdf`/`mlfq` `/schedule` requests).
+74 tests cover the scheduler algorithms (FCFS/SJF/Priority/Round Robin against hand-worked textbook examples, plus EEVDF/MLFQ shape/sanity checks and Jain's Fairness Index), process state-machine validation, resource allocation/over-capacity rejection, deadlock cycle detection (both a true circular-wait case and a non-circular negative case), the lock-ordering violation checker and timeout-based abort, the EWMA/Modified-Z-score/CUSUM statistical anomaly detectors, the recovery engine's preemption rules (never evict higher-priority work, only evict when it actually frees enough, retry when memory has already been freed), grounding of AI answers in recorded incident facts, the benchmark module's SWF parser and metric functions, and FastAPI `TestClient` smoke tests. Tests never call a live LLM, even if your `.env` has a key.
+
+Screenshots of every screen, captured from the running system, are in [`docs/screenshots/`](./docs/screenshots/).
 
 ## Project structure
 

@@ -1,0 +1,86 @@
+[
+  {
+    "file": "01_dashboard_initial.png",
+    "caption": "Dashboard on first load: six seeded tasks-as-processes in the READY state, idle resource bars, and an empty AI SYSTEM feed."
+  },
+  {
+    "file": "02_processes_list.png",
+    "caption": "Processes screen: every task is a process with a PID, priority, burst time, memory/CPU requirement, and an enforced lifecycle state."
+  },
+  {
+    "file": "03_processes_create_form.png",
+    "caption": "Creating a new task through the form: name, description, priority, burst time (minutes), memory (MB) and CPU (%) requirements."
+  },
+  {
+    "file": "04_processes_after_create.png",
+    "caption": "The new task is admitted as PID 7 and moves NEW to READY automatically, persisted to SQLite."
+  },
+  {
+    "file": "05_scheduler_fcfs.png",
+    "caption": "Scheduler: FCFS. First-Come-First-Served: tasks run strictly in arrival order. Simple and full-utilisation, but long tasks can delay everything behind them (the convoy effect). The page shows the Gantt chart, per-process timing metrics, and Jain's Fairness Index."
+  },
+  {
+    "file": "06_scheduler_sjf.png",
+    "caption": "Scheduler: SJF. Shortest-Job-First: the shortest tasks are dispatched first, minimising average wait for short work at the risk of starving long tasks. The page shows the Gantt chart, per-process timing metrics, and Jain's Fairness Index."
+  },
+  {
+    "file": "07_scheduler_priority.png",
+    "caption": "Scheduler: Priority. Priority scheduling using Procura's effective-priority score (user priority + deadline urgency + waiting-time aging + resource cost + Slurm-style fair-share decay). The page shows the Gantt chart, per-process timing metrics, and Jain's Fairness Index."
+  },
+  {
+    "file": "08_scheduler_round_robin.png",
+    "caption": "Scheduler: Round Robin. Round Robin with a fixed quantum: every task gets a turn in rotation, bounding the worst-case wait between turns. The page shows the Gantt chart, per-process timing metrics, and Jain's Fairness Index."
+  },
+  {
+    "file": "09_scheduler_eevdf.png",
+    "caption": "Scheduler: EEVDF. EEVDF, Linux's default scheduler since kernel 6.6: dispatches the eligible task with the earliest virtual deadline, approximating an ideal fair share. The page shows the Gantt chart, per-process timing metrics, and Jain's Fairness Index."
+  },
+  {
+    "file": "10_scheduler_mlfq.png",
+    "caption": "Scheduler: MLFQ. Multi-Level Feedback Queue (OSTEP's five rules): tasks are demoted after exhausting their allotment and periodically boosted back to the top queue to prevent starvation. The page shows the Gantt chart, per-process timing metrics, and Jain's Fairness Index."
+  },
+  {
+    "file": "11_dashboard_contention.png",
+    "caption": "Dashboard under resource contention: the low-priority 'Weekly grocery run' (P3) is hogging 1200 MB and P1 holds 600 MB, leaving only 248 MB of the 2048 MB simulated memory pool for everything else."
+  },
+  {
+    "file": "12_errors_before_detect.png",
+    "caption": "Error Monitor before detection: no errors logged yet, with the RUN DETECT NOW control available."
+  },
+  {
+    "file": "13_errors_after_detect.png",
+    "caption": "Error Monitor after one detection pass, showing all three recovery outcomes: suspend_and_retry (a strictly lower-priority holder is preempted because doing so frees enough memory), retry (memory freed by an earlier recovery is reused), and memory_failure_no_victim (no lower-priority holder could free enough, so the task is left pending rather than evicting higher-priority work for nothing)."
+  },
+  {
+    "file": "13b_errors_diagnosis_expanded.png",
+    "caption": "An expanded diagnosis: the AI explanation is grounded in the recorded incident facts (requested vs. available memory) and the retrieved Memory_Management / Error_Recovery knowledge-base passages."
+  },
+  {
+    "file": "14_dashboard_after_recovery.png",
+    "caption": "Dashboard after automatic recovery: the AI SYSTEM feed shows each detect, diagnose and recover event, and memory utilisation reflects the preempted low-priority task and the retried allocations."
+  },
+  {
+    "file": "15_assistant_grounded.png",
+    "caption": "AI Assistant grounded on a specific process (P5): the answer combines retrieved knowledge-base passages with the live process state."
+  },
+  {
+    "file": "16_assistant_concept.png",
+    "caption": "AI Assistant answering a general OS-concepts question, retrieved from the six-document knowledge base."
+  },
+  {
+    "file": "17_api_docs.png",
+    "caption": "Auto-generated interactive API documentation (FastAPI /docs) listing all 16 REST endpoints."
+  },
+  {
+    "file": "18_cli_procura_top.png",
+    "caption": "procura_top, the htop-style terminal dashboard: the same live process table, resource utilisation bars and AI SYSTEM feed as the web dashboard, rendered with the rich library and polling the same REST API."
+  },
+  {
+    "file": "19_cli_benchmark.png",
+    "caption": "The benchmark module running all six algorithms against an identical, seeded 30-job Poisson workload and printing the standard metric set (makespan, turnaround, waiting time, utilisation, Jain's Fairness Index, max wait, starvation count)."
+  },
+  {
+    "file": "20_cli_tests.png",
+    "caption": "The automated test suite: every scheduling algorithm, state transition, resource-contention path, statistical detector and recovery script is verified, with all tests passing."
+  }
+]

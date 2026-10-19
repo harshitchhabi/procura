@@ -50,21 +50,32 @@ def test_fcfs_hand_worked():
 
 def test_sjf_hand_worked():
     result = sjf(make_processes())
-    # Ascending burst time: P2(3), P1(5), P4(6), P3(8)
-    assert result["order"] == [2, 1, 4, 3]
+    # Non-preemptive SJF chooses among *arrived* jobs: only P1 has arrived at
+    # t=0, so it runs 0-5; then the shortest waiting job each time: P2(3), P4(6), P3(8).
+    assert result["order"] == [1, 2, 4, 3]
 
     m = metrics_by_pid(result)
-    assert m[2]["completion_time"] == 4
-    assert m[1]["completion_time"] == 9
-    assert m[4]["completion_time"] == 15
-    assert m[3]["completion_time"] == 23
+    assert m[1]["completion_time"] == 5
+    assert m[2]["completion_time"] == 8
+    assert m[4]["completion_time"] == 14
+    assert m[3]["completion_time"] == 22
 
-    assert m[2]["waiting_time"] == 0
-    assert m[1]["waiting_time"] == 4
-    assert m[4]["waiting_time"] == 6
-    assert m[3]["waiting_time"] == 13
+    assert m[1]["waiting_time"] == 0
+    assert m[2]["waiting_time"] == 4
+    assert m[4]["waiting_time"] == 5
+    assert m[3]["waiting_time"] == 12
 
-    assert result["metrics"]["average_waiting_time"] == 5.75
+    assert result["metrics"]["average_waiting_time"] == 5.25
+
+
+def test_sjf_never_idles_cpu_while_a_job_is_ready():
+    procs = [
+        {"pid": 1, "name": "Long early", "arrival_time": 0, "burst_time": 10},
+        {"pid": 2, "name": "Short late", "arrival_time": 5, "burst_time": 1},
+    ]
+    result = sjf(procs)
+    assert result["order"] == [1, 2]
+    assert result["metrics"]["cpu_utilization"] == 100.0
 
 
 def test_round_robin_hand_worked():
@@ -97,9 +108,20 @@ def test_priority_orders_by_effective_score_desc():
     processes[3]["priority"] = "Medium"
 
     result = priority_scheduling(processes)
+    # Only P1 has arrived at t=0, so it runs first (non-preemptive); then the
+    # highest effective priority among waiting jobs: P2 (High), P4 (Medium), P3 (Low).
+    assert result["order"] == [1, 2, 4, 3]
+
+
+def test_priority_orders_simultaneous_arrivals_by_effective_score():
+    processes = make_processes()
+    for p, label in zip(processes, ["Low", "High", "Low", "Medium"]):
+        p["arrival_time"] = 0
+        p["priority"] = label
+
+    result = priority_scheduling(processes)
     scores = {p["pid"]: effective_priority_score(p) for p in processes}
-    expected_order = sorted(scores, key=lambda pid: -scores[pid])
-    assert result["order"] == expected_order
+    assert result["order"] == sorted(scores, key=lambda pid: (-scores[pid], pid))
 
 
 def test_effective_priority_score_components():

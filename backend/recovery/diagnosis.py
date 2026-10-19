@@ -35,7 +35,12 @@ def diagnose(finding: dict[str, Any], process: Optional[dict[str, Any]] = None) 
         f"{question} Specific incident: {finding.get('details', 'no details available')}"
     )
 
-    rag_result = answer_question(contextual_question, process=process, source_filter=sources)
+    rag_result = answer_question(
+        contextual_question,
+        process=process,
+        source_filter=sources,
+        incident_facts=[f"{error_type}: {finding.get('details', 'no details available')}"],
+    )
     return {
         "error_type": error_type,
         "diagnosis_text": rag_result["answer"],

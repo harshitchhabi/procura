@@ -10,10 +10,11 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 # Tests must be hermetic: never make a real LLM network call even if the
-# developer's real .env has a key configured. This forces every /ask test
-# through the deterministic offline_extractive path.
+# developer's real .env has a key configured. Set (not pop) to empty strings:
+# main.py's load_dotenv() never overrides an existing variable, but would
+# re-populate a deleted one from .env.
 for _key in ("GROQ_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
-    os.environ.pop(_key, None)
+    os.environ[_key] = ""
 
 import database  # noqa: E402
 

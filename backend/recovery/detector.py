@@ -195,8 +195,11 @@ def detect_memory_failure(process: dict[str, Any], resource_mgr: ResourceManager
     """Flag a memory_failure if a process's declared memory_requirement
     exceeds what's currently available in the memory pool."""
     requirement = process.get("memory_requirement", 0)
+    already_held = resource_mgr.holders.get("memory", {}).get(process["pid"], 0)
+    if already_held >= requirement:
+        return None
     available = resource_mgr.available("memory")
-    if requirement > available:
+    if requirement - already_held > available:
         return {
             "error_type": "memory_failure",
             "pid": process["pid"],

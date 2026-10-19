@@ -90,3 +90,17 @@ def test_benchmark_endpoint_returns_all_six_algorithms():
     body = resp.json()
     algos = {row["algorithm"] for row in body["results"]}
     assert algos == {"fcfs", "sjf", "priority", "round_robin", "eevdf", "mlfq"}
+
+
+def test_ask_grounds_answer_in_recorded_incident():
+    import database
+
+    pid = client.post("/processes", json={"name": "Grounding probe", "burst_time": 10}).json()["pid"]
+    error_id = database.log_error(pid, "memory_failure", "requires 1600MB memory but only 248.0MB is available.")
+    database.log_recovery_action(error_id, "suspend_and_retry", pid)
+
+    body = client.post("/ask", json={"question": "Why did this task fail?", "pid": pid}).json()
+
+    assert "requires 1600MB memory but only 248.0MB is available." in body["answer"]
+    assert "suspend_and_retry" in body["answer"]
+    assert "Current simulated memory (now, after any recovery actions" in body["answer"]

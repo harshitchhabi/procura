@@ -14,6 +14,7 @@ either as a web dashboard or as a literal terminal process monitor.
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 import urllib.error
@@ -28,7 +29,7 @@ from rich.progress_bar import ProgressBar
 from rich.table import Table
 from rich.text import Text
 
-API_BASE = "http://localhost:8000"
+API_BASE = os.getenv("PROCURA_API_URL", "http://localhost:8000")
 POLL_SECONDS = 2
 
 STATE_COLORS = {

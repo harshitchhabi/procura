@@ -40,14 +40,50 @@ def _lowest_priority_pid(pids: list[int], exclude: Optional[int] = None) -> Opti
 
 def recover_memory_failure(finding: dict[str, Any], resource_mgr: ResourceManager) -> dict[str, Any]:
     failing_pid = finding["pid"]
+
+    # Findings are snapshotted before any recovery runs, so an earlier recovery
+    # in the same pass may already have freed enough memory: retry first.
+    try:
+        failing = process_manager.get_process(failing_pid)
+        needed = failing.get("memory_requirement", 0) - resource_mgr.holders["memory"].get(failing_pid, 0)
+        if needed <= resource_mgr.available("memory"):
+            result = resource_mgr.allocate(failing_pid, "memory", needed)
+            if result.get("success"):
+                return {
+                    "action_type": "retry",
+                    "target_pid": failing_pid,
+                    "message": f"Memory had become available since detection; retried allocation: {result['message']}",
+                }
+    except Exception:
+        pass
+
     holders = list(resource_mgr.holders.get("memory", {}).keys())
     victim = _lowest_priority_pid(holders, exclude=failing_pid)
+
+    # Like Kubernetes' DefaultPreemption: only evict a strictly lower-priority
+    # holder (otherwise two processes can evict each other forever), and only
+    # if evicting it actually frees enough memory for the failing process.
+    if victim is not None:
+        try:
+            failing = process_manager.get_process(failing_pid)
+            if effective_priority_score(process_manager.get_process(victim)) >= effective_priority_score(failing):
+                victim = None
+            else:
+                needed = failing.get("memory_requirement", 0) - resource_mgr.holders["memory"].get(failing_pid, 0)
+                freed = resource_mgr.holders["memory"].get(victim, 0)
+                if resource_mgr.available("memory") + freed < needed:
+                    victim = None
+        except Exception:
+            victim = None
 
     if victim is None:
         return {
             "action_type": "memory_failure_no_victim",
             "target_pid": failing_pid,
-            "message": "No other process holds memory to free; failing process left pending.",
+            "message": (
+                "No lower-priority process holds enough memory to make this allocation fit; "
+                "failing process left pending."
+            ),
         }
 
     resource_mgr.release(victim, "memory")

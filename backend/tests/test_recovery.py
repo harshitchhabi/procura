@@ -127,3 +127,46 @@ def test_cusum_does_not_flag_stable_sequence():
 def test_cusum_flags_anomalous_shift():
     flagged, _ = cusum_flag(STABLE_HISTORY, ANOMALOUS_NEW_VALUE)
     assert flagged is True
+
+
+def test_detect_memory_failure_ignores_process_already_holding_its_memory():
+    rm = ResourceManager()
+    rm.allocate(pid=1, resource="memory", amount=900)
+    rm.allocate(pid=2, resource="memory", amount=900)
+    proc = {"pid": 1, "memory_requirement": 512}
+    assert detect_memory_failure(proc, rm) is None
+
+
+def test_recover_memory_failure_never_evicts_higher_priority_holder():
+    rm = ResourceManager()
+    high = process_manager.create_process(name="High prio holder", burst_time=5, priority="High", memory_requirement=1800)
+    rm.allocate(high["pid"], "memory", 1800)
+    low = process_manager.create_process(name="Low prio requester", burst_time=5, priority="Low", memory_requirement=500)
+
+    result = recover_memory_failure({"pid": low["pid"]}, rm)
+
+    assert result["action_type"] == "memory_failure_no_victim"
+    assert rm.holders["memory"].get(high["pid"]) == 1800
+
+
+def test_recover_memory_failure_skips_eviction_that_would_not_free_enough():
+    rm = ResourceManager()
+    low = process_manager.create_process(name="Small low holder", burst_time=5, priority="Low", memory_requirement=300)
+    rm.allocate(low["pid"], "memory", 300)
+    rm.allocate(999, "memory", 1600)  # untracked holder keeps the pool nearly full
+    high = process_manager.create_process(name="Huge high requester", burst_time=5, priority="High", memory_requirement=1900)
+
+    result = recover_memory_failure({"pid": high["pid"]}, rm)
+
+    assert result["action_type"] == "memory_failure_no_victim"
+    assert rm.holders["memory"].get(low["pid"]) == 300
+
+
+def test_recover_memory_failure_retries_when_memory_freed_since_detection():
+    rm = ResourceManager()
+    proc = process_manager.create_process(name="Stale finding", burst_time=5, priority="Medium", memory_requirement=256)
+
+    result = recover_memory_failure({"pid": proc["pid"]}, rm)
+
+    assert result["action_type"] == "retry"
+    assert rm.holders["memory"].get(proc["pid"]) == 256
