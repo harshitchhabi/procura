@@ -192,3 +192,16 @@ def test_run_detection_ignores_finished_processes():
     findings = run_detection([finished], rm)
 
     assert not any(f["error_type"] == "memory_failure" for f in findings)
+
+
+def test_detect_deadlock_reports_who_holds_and_waits_for_what():
+    rm = ResourceManager()
+    rm.allocate(pid=1, resource="file", amount=64)
+    rm.allocate(pid=3, resource="database", amount=20)
+    rm.allocate(pid=1, resource="database", amount=5)
+    rm.allocate(pid=3, resource="file", amount=5)
+
+    details = detect_deadlock(rm)["details"]
+
+    assert "pid 1 holds 64 file and waits for pid 3" in details
+    assert "pid 3 holds 20 database and waits for pid 1" in details

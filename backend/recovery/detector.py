@@ -215,10 +215,16 @@ def detect_deadlock(resource_mgr: ResourceManager) -> Optional[dict[str, Any]]:
     """Flag a deadlock if the waits-for graph contains a cycle."""
     cycle = resource_mgr.detect_cycle()
     if cycle:
+        members = list(dict.fromkeys(cycle))
+        who = []
+        for pid in members:
+            held = [f"{amt:g} {res}" for res, by_pid in resource_mgr.holders.items() for p, amt in by_pid.items() if p == pid and amt > 0]
+            waits = sorted(resource_mgr.waits_for.get(pid, set()))
+            who.append(f"pid {pid} holds {', '.join(held) or 'nothing'} and waits for pid {', '.join(map(str, waits))}")
         return {
             "error_type": "deadlock",
             "pid": cycle[0],
-            "details": f"Circular wait detected among pids: {' -> '.join(str(p) for p in cycle)}.",
+            "details": f"Circular wait detected among pids: {' -> '.join(str(p) for p in cycle)}. " + "; ".join(who) + ".",
             "cycle": cycle,
         }
     return None

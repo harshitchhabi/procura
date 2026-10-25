@@ -274,6 +274,16 @@ def detect() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+RECOVERY_RULES = {
+    "terminate_and_resume": "Procura's deadlock rule terminates the process with the lowest effective priority in the cycle, releases all its resources, and returns the cycle's other BLOCKED processes to READY.",
+    "suspend_and_retry": "Procura suspends a memory holder only if it has strictly lower effective priority than the failing process and freeing its memory makes the failing allocation fit.",
+    "retry": "Memory had been freed since detection, so the allocation was simply retried.",
+    "memory_failure_no_victim": "No lower-priority holder could free enough memory, so the process was left pending and nothing was evicted.",
+    "stop_and_retry": "The process was moved back to READY and its error count incremented.",
+    "restart": "The process was moved back to READY and its error count incremented.",
+}
+
+
 def _incident_facts_for(pid: int, limit: int = 3) -> list[str]:
     """Ground /ask in what actually happened to this process, so the LLM explains
     recorded causes instead of guessing plausible-sounding ones."""
@@ -289,15 +299,19 @@ def _incident_facts_for(pid: int, limit: int = 3) -> list[str]:
                 fact += f" Recovery executed: {row['action_type']} targeting pid {row['target_pid']}."
         else:
             fact = (
-                f"This process was the target of recovery action {row['action_type']} "
-                f"taken to resolve {row['error_type']} for pid {row['pid']}."
+                f"This process was the target of recovery action {row['action_type']}, taken to resolve "
+                f"{row['error_type']} at {row['detected_at']}: {row['raw_details']}"
             )
+        rule = RECOVERY_RULES.get(row["action_type"])
+        if rule:
+            fact += f" Rule applied: {rule}"
         facts.append(fact)
-    mem = resource_manager.utilization()["memory"]
+    pools = ", ".join(
+        f"{name} {u['allocated']:g}/{u['capacity']:g}" for name, u in resource_manager.utilization().items()
+    )
     facts.append(
-        f"Current simulated memory (now, after any recovery actions above; not at the time "
-        f"of the failure): {mem['allocated']} of {mem['capacity']} MB allocated, "
-        f"{mem['available']} MB available."
+        f"Current simulated resources (now, after any recovery actions above; not at the time "
+        f"of the failure), allocated/capacity: {pools}."
     )
     return facts
 

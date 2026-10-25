@@ -103,4 +103,18 @@ def test_ask_grounds_answer_in_recorded_incident():
 
     assert "requires 1600MB memory but only 248.0MB is available." in body["answer"]
     assert "suspend_and_retry" in body["answer"]
-    assert "Current simulated memory (now, after any recovery actions" in body["answer"]
+    assert "Current simulated resources (now, after any recovery actions" in body["answer"]
+
+
+def test_ask_explains_deadlock_victim_with_rule_and_cycle():
+    import database
+
+    a = client.post("/processes", json={"name": "Deadlock A", "burst_time": 10, "priority": "High"}).json()["pid"]
+    b = client.post("/processes", json={"name": "Deadlock B", "burst_time": 10, "priority": "Low"}).json()["pid"]
+    error_id = database.log_error(a, "deadlock", f"Circular wait detected among pids: {a} -> {b} -> {a}.")
+    database.log_recovery_action(error_id, "terminate_and_resume", b)
+
+    body = client.post("/ask", json={"question": "Why was this terminated?", "pid": b}).json()
+
+    assert f"{a} -> {b} -> {a}" in body["answer"]
+    assert "lowest effective priority in the cycle" in body["answer"]
