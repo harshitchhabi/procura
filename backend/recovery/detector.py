@@ -211,16 +211,21 @@ def detect_memory_failure(process: dict[str, Any], resource_mgr: ResourceManager
     return None
 
 
-def detect_deadlock(resource_mgr: ResourceManager) -> Optional[dict[str, Any]]:
-    """Flag a deadlock if the waits-for graph contains a cycle."""
+def detect_deadlock(resource_mgr: ResourceManager, processes: Optional[list[dict[str, Any]]] = None) -> Optional[dict[str, Any]]:
+    """Flag a deadlock if the waits-for graph contains a cycle. When the process
+    list is given, each member's name and priority are recorded too, because the
+    recovery rule (terminate the lowest priority) cannot be explained without them."""
     cycle = resource_mgr.detect_cycle()
     if cycle:
         members = list(dict.fromkeys(cycle))
+        by_pid = {p.get("pid"): p for p in (processes or [])}
         who = []
         for pid in members:
             held = [describe_amount(res, amt) for res, by_pid in resource_mgr.holders.items() for p, amt in by_pid.items() if p == pid and amt > 0]
             waits = sorted(resource_mgr.waits_for.get(pid, set()))
-            who.append(f"pid {pid} holds {', '.join(held) or 'nothing'} and waits for pid {', '.join(map(str, waits))}")
+            proc = by_pid.get(pid)
+            label = f" ({proc.get('name')}, {proc.get('priority')} priority)" if proc else ""
+            who.append(f"pid {pid}{label} holds {', '.join(held) or 'nothing'} and waits for pid {', '.join(map(str, waits))}")
         return {
             "error_type": "deadlock",
             "pid": cycle[0],
@@ -238,7 +243,7 @@ def run_detection(
     """Run all detectors across the given processes and resource manager state."""
     findings: list[dict[str, Any]] = []
 
-    deadlock = detect_deadlock(resource_mgr)
+    deadlock = detect_deadlock(resource_mgr, processes)
     if deadlock:
         findings.append(deadlock)
 

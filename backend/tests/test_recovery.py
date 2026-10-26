@@ -233,3 +233,28 @@ def test_burst_anomaly_end_to_end_ignores_steady_progress_and_flags_a_jump():
     findings = run_detection([process_manager.get_process(proc["pid"])], rm)
     anomalies = [f for f in findings if f["error_type"] == "burst_anomaly"]
     assert anomalies and anomalies[0]["pid"] == proc["pid"] and anomalies[0]["method"] == "ewma"
+
+
+def test_deadlock_details_name_each_member_and_its_priority_when_processes_are_given():
+    rm = ResourceManager()
+    rm.allocate(1, "file", 64)
+    rm.allocate(3, "database", 20)
+    rm.allocate(1, "database", 5)
+    rm.allocate(3, "file", 5)
+    procs = [{"pid": 1, "name": "Term paper", "priority": "High"}, {"pid": 3, "name": "Errand", "priority": "Low"}]
+    details = detect_deadlock(rm, procs)["details"]
+    assert "pid 1 (Term paper, High priority)" in details
+    assert "pid 3 (Errand, Low priority)" in details
+
+
+def test_deadlock_diagnosis_is_given_the_recovery_policy_as_a_fact(monkeypatch):
+    from recovery import diagnosis
+    seen = {}
+
+    def fake(question, **kw):
+        seen.update(kw)
+        return {"answer": "ok", "mode": "offline", "sources": []}
+
+    monkeypatch.setattr(diagnosis, "answer_question", fake)
+    diagnosis.diagnose({"error_type": "deadlock", "details": "cycle"})
+    assert any("lowest effective priority" in f for f in seen["incident_facts"])

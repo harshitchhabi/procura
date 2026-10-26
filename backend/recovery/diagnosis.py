@@ -23,6 +23,14 @@ QUESTION_MAP = {
 }
 
 
+# Fixed policy per failure type, given to the model as a fact so that it explains the rule that
+# will be applied instead of guessing at one.
+POLICY_FACTS = {
+    "deadlock": "Procura's deadlock rule: terminate the process with the lowest effective priority in the cycle, release all its resources, and return the other blocked processes in the cycle to READY.",
+    "memory_failure": "Procura's memory rule: retry first; otherwise suspend a holder only if it has strictly lower priority and freeing its memory makes the failing allocation fit; otherwise leave the process pending and evict nobody.",
+}
+
+
 def diagnose(finding: dict[str, Any], process: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     """Classify the failure type (already tagged by the detector) and ask the
     RAG assistant, grounded in the relevant knowledge-base file(s) and the
@@ -39,7 +47,8 @@ def diagnose(finding: dict[str, Any], process: Optional[dict[str, Any]] = None) 
         contextual_question,
         process=process,
         source_filter=sources,
-        incident_facts=[f"{error_type}: {finding.get('details', 'no details available')}"],
+        incident_facts=[f"{error_type}: {finding.get('details', 'no details available')}"]
+        + ([POLICY_FACTS[error_type]] if error_type in POLICY_FACTS else []),
     )
     return {
         "error_type": error_type,

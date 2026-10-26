@@ -1,0 +1,26 @@
+[
+  {
+    "file": "d01_dashboard_clean.png",
+    "caption": "Starting point: six tasks READY, no resources held, no errors."
+  },
+  {
+    "file": "d02_dashboard_circular_wait.png",
+    "caption": "Both pools are full and each task waits for the other: P1 holds all file handles and waits for a database connection; P3 holds all connections and waits for a file handle."
+  },
+  {
+    "file": "d03_errors_deadlock_resolved.png",
+    "caption": "One detection pass: the deadlock is found, explained and resolved. The row shows the recovery action (terminate_and_resume) and the target process."
+  },
+  {
+    "file": "d04_errors_deadlock_diagnosis.png",
+    "caption": "The diagnosis for the deadlock, written by the language model from the recorded cycle and the retrieved Deadlocks passages."
+  },
+  {
+    "file": "d05_dashboard_after.png",
+    "caption": "After recovery: P3 is TERMINATED and its connections are released, P1 is back to READY and the wait-for graph is empty."
+  },
+  {
+    "file": "d06_assistant_why_terminated.png",
+    "caption": "Asking the assistant about P3 after the fact: the answer cites the recorded cycle and the rule that was applied."
+  }
+]
