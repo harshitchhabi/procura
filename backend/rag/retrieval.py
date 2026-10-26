@@ -34,8 +34,8 @@ def get_index() -> TfidfIndex:
     return build_index()
 
 
-def search(query: str, top_k: int = 3, source_filter: list[str] | None = None) -> list[SearchResult]:
-    index = get_index()
+def search(query: str, top_k: int = 3, source_filter: list[str] | None = None, index: TfidfIndex | None = None) -> list[SearchResult]:
+    index = index or get_index()
     query_vec = index.vectorize_query(query)
     results = []
     for chunk, vec in zip(index.chunks, index.vectors):

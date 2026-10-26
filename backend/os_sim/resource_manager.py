@@ -55,6 +55,21 @@ DEFAULT_CAPACITY = {
 
 RESOURCE_NAMES = list(DEFAULT_CAPACITY)
 
+# How each pool is counted. Anything that prints an amount for people or for the
+# AI goes through describe_amount() so a file-handle count is never read as MB.
+UNIT_LABELS = {
+    "cpu": "% of CPU",
+    "memory": "MB of memory",
+    "file": "file handles",
+    "database": "database connections",
+    "network": "Mbps of network bandwidth",
+}
+
+
+def describe_amount(resource: str, amount: float) -> str:
+    """'64 file handles', '1200 MB of memory', '20 database connections'."""
+    return f"{amount:g} {UNIT_LABELS.get(resource, resource)}"
+
 # Canonical global lock order (research report: "fixed lock ordering" as a
 # zero-runtime-cost deadlock-prevention mechanism, analogous to kernel
 # lockdep). Any fixed total order works; we use the declaration order above

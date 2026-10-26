@@ -78,15 +78,22 @@ def build_process_table(processes: list[dict]) -> Table:
 
 def build_resource_panel(resources: dict) -> Panel:
     util = resources.get("utilization", {}) if resources else {}
-    lines = []
+    grid = Table.grid(padding=(0, 1), expand=True)
+    grid.add_column(width=8, no_wrap=True)  # name
+    grid.add_column(ratio=1, min_width=8)  # bar
+    grid.add_column(justify="right", width=6, no_wrap=True)  # percent
+    grid.add_column(justify="right", width=11, no_wrap=True)  # allocated/capacity
     for name, stats in util.items():
         pct = stats.get("utilization_pct", 0.0)
         bar_color = "green" if pct < 60 else ("yellow" if pct < 85 else "red")
-        bar = ProgressBar(total=100, completed=min(pct, 100), width=30, complete_style=bar_color)
-        label = Text(f"{name.upper():10}", style="bold")
-        console_line = Group(label, bar, Text(f" {pct:5.1f}%  ({stats.get('allocated', 0):g}/{stats.get('capacity', 0):g})"))
-        lines.append(console_line)
+        grid.add_row(
+            Text(name.upper(), style="bold"),
+            ProgressBar(total=100, completed=min(pct, 100), complete_style=bar_color),
+            f"{pct:.1f}%",
+            f"{stats.get('allocated', 0):g}/{stats.get('capacity', 0):g}",
+        )
 
+    lines = [grid] if util else []
     waits = resources.get("waiting_for_graph", {}) if resources else {}
     if waits:
         wait_text = Text("\nWAIT-FOR GRAPH: ", style="bold red")

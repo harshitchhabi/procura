@@ -91,6 +91,63 @@ def generate_poisson_workload(
     return processes
 
 
+WORKLOAD_KINDS = ("gamma", "heavy_tail", "bursty")
+
+
+def generate_workload(kind: str, n: int, load: float, seed: Optional[int] = 42) -> list[dict[str, Any]]:
+    """Generate `n` jobs for a single CPU at an offered load `load` (rho).
+
+    Offered load is mean burst time x arrival rate, so load < 1 is a stable
+    queue and load > 1 is overload. Three families, all with the same mean
+    burst so that only the *shape* differs:
+
+      gamma       Poisson arrivals, Gamma(2, 4) bursts (mean 8): the default.
+      heavy_tail  Poisson arrivals, Pareto(alpha=1.8) bursts rescaled to mean 8:
+                  a few very long jobs among many short ones, the shape real
+                  HPC logs show (Feitelson, workload modelling).
+      bursty      Gamma bursts, but arrivals come from a two-phase
+                  hyperexponential (70% of gaps from a fast phase, 30% from a
+                  slow one) with the same mean rate: arrivals clump.
+    """
+    if kind not in WORKLOAD_KINDS:
+        raise ValueError(f"Unknown workload kind {kind!r}; choose from {WORKLOAD_KINDS}")
+    rng = random.Random(seed)
+    mean_burst = 8.0
+    rate = load / mean_burst  # jobs per minute
+
+    def burst() -> float:
+        if kind == "heavy_tail":
+            alpha = 1.8
+            xm = mean_burst * (alpha - 1) / alpha  # Pareto mean = xm * alpha / (alpha - 1)
+            return max(1.0, min(xm * rng.paretovariate(alpha), 40 * mean_burst))
+        return max(1.0, rng.gammavariate(2.0, 4.0))
+
+    def gap() -> float:
+        if kind == "bursty":
+            # fast phase 4x the mean rate with p=0.7; slow phase chosen so the mean gap is unchanged
+            fast_rate = 4.0 * rate
+            p_fast = 0.7
+            slow_mean = (1.0 / rate - p_fast / fast_rate) / (1 - p_fast)
+            return rng.expovariate(fast_rate) if rng.random() < p_fast else rng.expovariate(1.0 / slow_mean)
+        return rng.expovariate(rate)
+
+    processes, clock = [], 0.0
+    for i in range(1, n + 1):
+        clock += gap()
+        processes.append(
+            {
+                "pid": i,
+                "name": f"job-{i}",
+                "arrival_time": round(clock, 2),
+                "burst_time": round(burst(), 2),
+                "priority": rng.choice(PRIORITY_LABELS),
+                "memory_requirement": rng.randint(0, 512),
+                "cpu_requirement": rng.randint(0, 50),
+            }
+        )
+    return processes
+
+
 def parse_swf(path: str) -> list[dict[str, Any]]:
     """Parse a Standard Workload Format (SWF) trace file.
 

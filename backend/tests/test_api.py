@@ -118,3 +118,79 @@ def test_ask_explains_deadlock_victim_with_rule_and_cycle():
 
     assert f"{a} -> {b} -> {a}" in body["answer"]
     assert "lowest effective priority in the cycle" in body["answer"]
+
+
+def test_incident_facts_label_every_pool_with_its_unit():
+    facts = main._incident_facts_for(client.post("/processes", json={"name": "Units probe", "burst_time": 5}).json()["pid"])
+    pools = facts[-1]
+    for unit in ("MB of memory", "% of CPU", "file handles", "database connections", "Mbps of network bandwidth"):
+        assert unit in pools
+
+
+def test_prompt_tells_the_model_to_use_units_and_not_claim_a_single_option():
+    from rag.assistant import _build_prompt
+
+    prompt = _build_prompt("q", [], None, ["fact"])
+    assert "never invent a unit" in prompt
+    assert "only possible one" in prompt
+
+
+# --- provider failures must be retried and reported, never silently become "no key" ---
+
+class _FakeResp:
+    def __init__(self, status, body=None, text="", headers=None):
+        self.status_code, self._body, self.text, self.headers = status, body or {}, text, headers or {}
+
+    def json(self):
+        return self._body
+
+
+def test_post_json_waits_for_the_providers_hint_then_succeeds(monkeypatch):
+    import httpx
+    from rag import assistant
+
+    calls, sleeps = [], []
+    replies = [
+        _FakeResp(429, text='{"error":{"message":"Please try again in 4.7s."}}'),
+        _FakeResp(200, {"choices": [{"message": {"content": "ok"}}]}),
+    ]
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: calls.append(1) or replies[len(calls) - 1])
+    monkeypatch.setattr(assistant.time, "sleep", sleeps.append)
+
+    data, reason = assistant._post_json("https://x", {}, {})
+
+    assert reason is None and data["choices"][0]["message"]["content"] == "ok"
+    assert len(calls) == 2 and 5.0 <= sleeps[0] <= 5.3  # 4.7 s hint + 0.5 s margin
+
+
+def test_post_json_gives_up_with_a_reason(monkeypatch):
+    import httpx
+    from rag import assistant
+
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: _FakeResp(429, headers={"retry-after": "2"}))
+    monkeypatch.setattr(assistant.time, "sleep", lambda s: None)
+    assert assistant._post_json("https://x", {}, {}, attempts=3) == (None, "rate_limited")
+
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: _FakeResp(401))
+    assert assistant._post_json("https://x", {}, {}, attempts=3) == (None, "http_401")
+
+
+def test_answer_reports_why_a_configured_model_did_not_answer(monkeypatch):
+    from rag import assistant
+
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    monkeypatch.setattr(assistant, "_call_groq", lambda prompt, key: (None, "rate_limited"))
+    out = assistant.answer_question("What is the convoy effect?")
+
+    assert out["mode"] == "offline_extractive"
+    assert out["fallback_reason"] == "groq: rate_limited"
+    assert "did not answer (groq: rate_limited)" in out["answer"]
+    assert "no LLM API key configured" not in out["answer"]
+
+
+def test_empty_reasoning_answer_is_reported_not_hidden(monkeypatch):
+    import httpx
+    from rag import assistant
+
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: _FakeResp(200, {"choices": [{"message": {"content": ""}}]}))
+    assert assistant._call_groq("p", "k") == (None, "empty_answer")

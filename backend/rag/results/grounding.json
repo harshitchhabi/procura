@@ -1,0 +1,273 @@
+{
+ "summary": {
+  "incident_with_facts": 1.0,
+  "incident_facts_removed": 0.1111111111111111,
+  "concept": 0.8666666666666667,
+  "overall_with_facts": 0.9393939393939394,
+  "trials_requested_per_question": 3,
+  "unavailable_trials": 0,
+  "unit_misuse_with_facts": 0
+ },
+ "results": [
+  {
+   "id": "mem-no-victim",
+   "scenario": "memory",
+   "grounded": true,
+   "passes": 3,
+   "trials": 3,
+   "unavailable": 0,
+   "failures": [],
+   "answers": [
+    "The **Render final project video** process (pid\u202f5) requested **1600\u202fMB** of memory. At the time of the request, only **248.0\u202fMB** of free memory remained in the system (2048\u202fMB total \u2013 1624\u202fMB already in use). Because the available free space was less than the requested amount, the allocator raised a **memory_failure**.\n\n**Recovery action**  \nProcura follows the `memory_failure_no_victim` rule: no lower\u2011priority holder could be suspended and freed enough memory to satisfy the request. Therefore the process was simply left pending; no other process was evicted or suspended. The system then continued running with its current resource usage (0\u202f% CPU, 1624\u202fMB memory in use, no file handles, database connections, or network bandwidth in use).",
+    "The task \u201cRender final project video\u201d (pid\u202f5) requested 1600\u202fMB of memory, but only 248.0\u202fMB was free at the time of the request.  \nBecause the free pool was smaller than the request, the memory allocation failed \u2013 the failure is a normal **allocation\u2011time out\u2011of\u2011memory** condition, not a system\u2011wide memory exhaustion.  \n\nProcura\u2019s recovery logic for such a failure is:\n\n1. **Check for recent frees** \u2013 none had occurred, so it could not simply retry.  \n2. **Suspend and retry** \u2013 the system would only suspend a lower\u2011priority holder if freeing its memory would make the request fit. No lower\u2011priority holder could free enough memory (the lowest\u2011priority processes together hold 1392\u202fMB, still > 1600\u202fMB).  \n3. **memory_failure_no_victim** \u2013 because no suitable victim existed, the process was left **pending** and no memory was evicted.\n\nThus, the task hit the failure because the free memory (248\u202fMB) was less than its requirement (1600\u202fMB), and the system left it pending without evicting any process.",
+    "The process \u201cRender final project video\u201d (pid\u202f5) requested **1600\u202fMB** of RAM while only **248.0\u202fMB** was free at the time of the request. Because the total free memory was insufficient for that allocation, the kernel signaled a memory\u2011failure event.\n\nPer **Error_Recovery**, Procura first checks whether the required space could become available by simply retrying after other processes finish. No higher\u2011priority holder could be suspended to free enough memory, so the policy moves to **memory_failure_no_victim**. In this case the failing task is left in a pending state and no other process is evicted.\n\nAfter the recovery action, the simulated resources show 1624\u202fMB of memory in use out of 2048\u202fMB, leaving exactly the 248\u202fMB that was available, confirming that no eviction or suspension took place. The CPU, file handles, database connections, and network bandwidth remained idle. Thus the task hit a memory allocation failure because the request exceeded the current free memory, and the system left the task pending without evicting any processes."
+   ]
+  },
+  {
+   "id": "mem-no-victim",
+   "scenario": "memory",
+   "grounded": false,
+   "passes": 0,
+   "trials": 3,
+   "unavailable": 0,
+   "failures": [
+    "missing /248/"
+   ],
+   "answers": [
+    "The process \u201cRender final project video\u201d requested 1,600\u202fMB of memory, but at the moment the scheduler tried to allocate that memory the system\u2019s free\u2011memory pool did not contain a contiguous (or total) block large enough for the request. The failure was therefore a **memory\u2011allocation failure**\u2014the kernel detected that the requested amount could not be satisfied with the current free memory, rather than the system being permanently out of memory.\n\nAccording to Procura\u2019s error\u2011recovery policy (see *Error_Recovery*), the system first tries to **retry** the allocation after any memory that has been freed since the failure was detected. If that does not succeed, it may **suspend_and_retry**: a lower\u2011priority holder is suspended only if its effective priority is strictly lower than the failing task and if freeing its memory would actually make the request fit. If neither retry nor suspension can make the allocation succeed, the task is left **pending** (memory_failure_no_victim) rather than evicting higher\u2011priority work.\n\nSo, the task hit a memory\u2011allocation failure because the requested 1,600\u202fMB could not be satisfied with the available free memory, and the system responded by attempting a retry, then considering suspending a lower\u2011priority holder if that would provide enough space, and otherwise leaving the task pending until memory becomes available.",
+    "The job \u201cRender final project video\u201d requested **1600\u202fMB** of RAM.  \nAt the moment the allocation was attempted, the total free memory in the system was less than 1600\u202fMB, so the kernel reported a *memory\u2011allocation failure*. According to Procura\u2019s recovery rules (see **Error_Recovery**):\n\n1. **Retry** \u2013 tried first, but no memory had been freed since the failure was detected.  \n2. **suspend_and_retry** \u2013 a lower\u2011priority holder would be suspended only if it had strictly lower *effective* priority and freeing its memory would make the 1600\u202fMB request fit. The only candidate processes had equal or higher priority, so this option was not viable.  \n3. **memory_failure_no_victim** \u2013 since no lower\u2011priority victim could be evicted for benefit, the task was left **pending** rather than evicting higher\u2011priority work.\n\nThus, the task hit a memory\u2011allocation failure because the required 1600\u202fMB could not be satisfied with the available free memory. The system attempted a retry, then considered suspending a lower\u2011priority process, but found no suitable victim, so it left the job pending under the *memory_failure_no_victim* policy.",
+    "**Why the failure happened**\n\nProcura detected that the *Render final project video* (pid\u202f5) needed **1600\u202fMB** of memory, but at that instant the system had **not enough free memory** to satisfy the request.  \nAccording to the \u201cMemory\u202fManagement\u201d excerpt, a memory\u2011allocation failure occurs when a process asks for more memory than the system currently has available, even if total free memory might increase soon as other processes finish. In this case the allocation could not be satisfied immediately, so the simulator flagged an error.\n\n**What the system did**\n\nProcura follows the \u201cError_Recovery\u201d rules modeled on Kubernetes preemption:\n\n1. **Retry** \u2013 If any memory was freed *after* the failure was detected, Procura would simply attempt the allocation again.  \n2. **Suspend_and_retry** \u2013 If no memory had been freed, Procura checks for a holder with **strictly lower effective priority** than the failing task (Medium). If such a lower\u2011priority process exists and releasing its memory would make the 1600\u202fMB request fit, that process is suspended, its memory reclaimed, and the allocation is retried.  \n3. **Memory_failure_no_victim** \u2013 If no lower\u2011priority holder can be found or if suspending one would not create enough space, the task is left **pending**. No higher\u2011priority work is evicted, and no task is preempted unnecessarily.\n\nIn this simulation, the system did not have a suitable lower\u2011priority victim or sufficient freed memory, so the task was left pending, awaiting future memory availability."
+   ]
+  },
+  {
+   "id": "mem-suspend",
+   "scenario": "memory",
+   "grounded": true,
+   "passes": 3,
+   "trials": 3,
+   "unavailable": 0,
+   "failures": [],
+   "answers": [
+    "**What the system did for the failing task (pid\u202f2 \u2013 \u201cDatabase systems project\u201d)**  \n- When the memory allocation for pid\u202f2 failed, Procura invoked its memory\u2011failure recovery routine.  \n- The routine selected **pid\u202f3** (the process currently holding a memory block) for suspension.  \n- After suspending pid\u202f3, the routine retried the allocation for pid\u202f2.  \n\n**Why that action was allowed**  \n- The recovery rule (\u201cProcura suspends a memory holder only if it has strictly lower effective priority than the failing process and freeing its memory makes the failing allocation fit\u201d) is explicitly enforced in the logs.  \n- pid\u202f3\u2019s effective priority is lower than pid\u202f2\u2019s (the log shows a suspension was performed), and releasing its 520\u202fMB of memory (the difference between 768\u202fMB needed and 248\u202fMB available) brings the free memory up to 768\u202fMB, satisfying the allocation request.  \n- Consequently the system was permitted to suspend pid\u202f3 and retry the allocation for pid\u202f2.",
+    "**What happened?**  \nWhen the scheduler tried to allocate the 768\u202fMB that the Database systems project (pid\u202f2) needs, only 248\u202fMB were free, so a *memory\u2011failure* was logged. To recover, Procura executed the **suspend_and_retry** rule and suspended the process that was holding memory (pid\u202f3). After suspending pid\u202f3 the freed memory was enough for pid\u202f2\u2019s allocation, so the scheduler retried and succeeded.\n\n**Why was this allowed?**  \nThe recovery rule is explicitly defined: *\u201cProcura suspends a memory holder only if it has strictly lower effective priority than the failing process and freeing its memory makes the failing allocation fit.\u201d*  \n- pid\u202f2 has **High** priority (nice\u202f=\u202f\u20135).  \n- pid\u202f3 was the only other process holding memory, so it had a lower effective priority.  \n- Suspending pid\u202f3 released enough memory for pid\u202f2\u2019s request.  \n\nThus the system\u2019s action was legal under Procura\u2019s memory\u2011failure recovery policy and successfully satisfied the pending allocation.",
+    "**What happened**\n\n- At 15:54:20.109427\u202fUTC the scheduler tried to start process\u202fpid\u202f2 (Database\u202fsystems\u202fproject).  \n  It needs 768\u202fMB of RAM, but the system only had 248.0\u202fMB free \u2013 a **memory\u2011failure**.\n\n- The recovery policy that Procura has for memory failures is the **suspend\u2011and\u2011retry** rule:\n\n  1. Find a running process that holds memory.  \n  2. Suspend it **only if** its effective priority is strictly lower than the failing process\u2019s priority.  \n  3. Verify that the freed memory will bring the available pool up to the size needed for the failing allocation.\n\n- The scheduler examined the current memory holders and found **pid\u202f3**.  \n  pid\u202f3 has a lower effective priority than pid\u202f2, and suspending it frees enough memory so that the 768\u202fMB required by pid\u202f2 can be allocated.\n\n- Therefore the system **suspended pid\u202f3** and then retried the allocation for pid\u202f2.  \n  No other action (like terminating or pre\u2011empting a resource) was taken because the rule was satisfied.\n\n**Why that action was permitted**\n\n- The policy explicitly states that a memory holder may be suspended only when its priority is lower and the freed memory makes the failing allocation feasible.  \n- The rule is part of Procura\u2019s deterministic recovery logic, so the scheduler is allowed to suspend a lower\u2011priority process to satisfy a higher\u2011priority one.  \n- No other recovery mechanism was required or invoked, because the condition for suspend\u2011and\u2011retry was met."
+   ]
+  },
+  {
+   "id": "mem-suspend",
+   "scenario": "memory",
+   "grounded": false,
+   "passes": 0,
+   "trials": 3,
+   "unavailable": 0,
+   "failures": [
+    "missing /768/",
+    "missing /\\b(?:pid ?3|p3|grocery)\\b/",
+    "missing /lower/",
+    "missing /suspend/"
+   ],
+   "answers": [
+    "Because no incident facts were recorded for **pid\u202f2** (\u201cDatabase systems project\u201d), the simulator did not change the process\u2019s state or perform any action on it.  \nThe process simply remained in the **READY** queue, waiting to be dispatched according to Procura\u2019s scheduling policy.\n\nThis is allowed because, in the absence of an error, resource conflict, or a scheduling event, a process that is ready and has not yet started its CPU burst is expected to stay in the READY state. The scheduler will later select it based on its priority (High \u2192 nice\u202f\u20115 \u2192 higher weight) and its virtual deadline, but no action was taken at the moment the incident log was queried.",
+    "The system didn\u2019t take any special action for this process.  \nSince there were no incident facts recorded, the task simply remained in the READY state and was scheduled normally by Procura\u2019s EEVDF scheduler. EEVDF gives the task a CPU slice based on its priority\u2011derived weight (High \u2192 nice \u20135 \u2192 larger weight), but no preemption, termination, or recovery was required, so the normal dispatch path was all that applied.",
+    "Since there were no incident facts recorded for the process with\u202fpid\u202f2, the simulation did not perform any scheduling action on it. In the current state the task is simply marked **READY** and sits in the ready queue waiting to be dispatched by the scheduler. Because no event (such as a deadline miss, a resource request, or a preemption trigger) occurred for this task, the system had no reason to change its state or alter its resource allocation. Thus, the process remained in the READY state, and this is allowed because the scheduler only intervenes when a task\u2019s conditions (e.g., lag, deadlines, or resource conflicts) warrant a change in its execution status."
+   ]
+  },
+  {
+   "id": "mem-retry",
+   "scenario": "memory",
+   "grounded": true,
+   "passes": 3,
+   "trials": 3,
+   "unavailable": 0,
+   "failures": [],
+   "answers": [
+    "Because, according to the **Error_Recovery** rules, a *retry* is performed when the system has already freed enough memory since the failure was detected.  \nIn the log we see that the task **pid\u202f4** failed to get 256\u202fMB while only 248\u202fMB were available.  \nImmediately after the failure the simulator released some memory (e.g., other tasks completed or were preempted), increasing the available pool.  \nWhen the retry rule was applied, the allocator found that the now\u2011freed memory made the 256\u202fMB request fit, so the allocation succeeded on the next attempt.",
+    "The failure occurred because the task needed 256\u202fMB but only 248\u202fMB were free. According to Procura\u2019s **Error_Recovery** policy, the first step after a memory failure is to *retry* if memory has already been reclaimed since the failure was detected.  \nIn this simulation, the log states that \u201cMemory had been freed since detection,\u201d so when the retry was attempted there was indeed enough free memory to satisfy the 256\u202fMB request. Thus the allocation succeeded on the retry.",
+    "The allocation succeeded on retry because the recovery rule for a memory\u2011failure first checks whether the required memory has become available after the failure was detected. In this case, after the initial failure (only 248\u202fMB available for a 256\u202fMB request), the system freed some memory, bringing the available pool above 256\u202fMB. The rule \u201cretry: if memory has already been freed since the failure was detected, the allocation is simply retried\u201d was applied, and the retry succeeded. No evictions or suspensions were needed because the condition for a lower\u2011priority victim was not met."
+   ]
+  },
+  {
+   "id": "mem-retry",
+   "scenario": "memory",
+   "grounded": false,
+   "passes": 2,
+   "trials": 3,
+   "unavailable": 0,
+   "failures": [
+    "missing /free|releas|available/"
+   ],
+   "answers": [
+    "There was no memory\u2011allocation failure reported for **pid\u202f4**. Since the simulation didn\u2019t record any incident where the process tried to acquire memory and was denied, the scheduler simply allocated the 256\u202fMB it requested during the normal ready\u2011queue dispatch. Because the request never failed, there was nothing to \u201cretry\u201d; the allocation succeeded on the first attempt.",
+    "The allocation succeeded on retry because no other lower\u2011priority process was holding the needed 256\u202fMB of memory at the time the retry was attempted. According to the **Error_Recovery** rules, the system first retries an allocation if memory has already been freed since the failure was detected. Since the system had not evicted any victim (there was no eligible lower\u2011priority holder whose suspension would make the allocation fit), the retry simply found the required free space and completed successfully.",
+    "The task\u2019s allocation succeeded on retry because, according to **Procura\u2019s memory\u2011failure recovery rules**, a retry is performed only when the memory that the task needs has already been freed since the failure was detected. In this simulation, the incident facts show that no memory\u2011allocation failure ever occurred for the process **Prepare capstone presentation slides**. Therefore, when the scheduler attempted to allocate the requested 256\u202fMB of memory, the allocation was successful on the first try\u2014no eviction or suspension of lower\u2011priority holders was required, and the process was simply placed on the ready queue with the required resources already available."
+   ]
+  },
+  {
+   "id": "dl-victim",
+   "scenario": "deadlock",
+   "grounded": true,
+   "passes": 3,
+   "trials": 3,
+   "unavailable": 0,
+   "failures": [],
+   "answers": [
+    "The process **Weekly grocery run (pid\u202f3)** was terminated because it was the lowest\u2011priority member of a circular\u2011wait deadlock that the Procura scheduler detected at **2026\u201110\u201126T15:56:38.106515+00:00**.\n\n**Deadlock situation**\n\n- **pid\u202f1** holds 64 file handles and is waiting for a resource held by **pid\u202f3**.\n- **pid\u202f3** holds 20 database connections and is waiting for a resource held by **pid\u202f1**.\n\nThis forms a cycle 1\u202f\u2192\u202f3\u202f\u2192\u202f1. Procura\u2019s deadlock\u2011resolution rule is:\n\n1. Identify the cycle.\n2. Terminate the process with the lowest effective priority in the cycle.\n3. Release all resources held by that process.\n4. Move any other BLOCKED processes in the cycle back to READY.\n\nBecause **pid\u202f3** has *Low* priority, it was chosen for termination. When it was terminated, its 20 database connections were released. The scheduler then returned **pid\u202f1** (which was blocked) to the READY queue.\n\n**Was this the right choice?**\n\nAccording to the Procura deadlock policy, yes. The rule explicitly states that the process with the lowest effective priority in the cycle is killed to break the cycle. The policy ensures that resources can be freed quickly and that the remaining processes can proceed. Alternative actions (e.g., retrying, preempting, or deadlock\u2011free resource ordering) are not mandated by Procura\u2019s rule; the system simply follows the rule to guarantee progress. Thus the termination of pid\u202f3 was the correct and intended action.",
+    "**Why was the task terminated?**  \nThe deadlock detection found a circular wait between PID\u202f1 and PID\u202f3.  \nProcura\u2019s deadlock rule says: *terminate the process with the lowest effective priority in the cycle, release its resources, and move the remaining blocked processes back to READY.*  \nPID\u202f3 (\u201cWeekly grocery run\u201d) had the lowest effective priority (Low \u2192 nice\u202f+5) among the two processes, so it was chosen for termination. Its 20 database connections were freed and PID\u202f1 was returned to READY.\n\n**Was that the right choice?**  \nYes, within the confines of Procura\u2019s policy. The rule explicitly specifies that the lowest\u2011priority participant is the one to be killed, which is what occurred. It is a deterministic, policy\u2011driven resolution that guarantees the deadlock is broken and resources are released. The alternative (e.g., retry, preemption, or lock ordering) is not enforced by this policy, so terminating the low\u2011priority process is the correct action per Procura\u2019s design.",
+    "**Why was the task terminated?**  \nThe system detected a circular wait:  \n- PID\u202f1 held 64 file handles and was waiting for a resource held by PID\u202f3.  \n- PID\u202f3 (this process) held 20 database connections and was waiting for a resource held by PID\u202f1.  \n\nProcura\u2019s deadlock\u2011resolution rule says: *terminate the process with the lowest effective priority in the cycle, release all of its resources, and return the other blocked processes to READY*.  \nPID\u202f3 had a *Low* priority (nice\u202f+5), which is lower than PID\u202f1\u2019s priority. Therefore the rule selected PID\u202f3 for termination. All 20 database connections it held were released, and PID\u202f1 was moved from BLOCKED back to READY.\n\n**Was that the right choice?**  \nAccording to the system\u2019s policy it was the correct action. The rule explicitly specifies that the lowest\u2011priority process in a deadlock cycle is terminated. This prevents starvation and ensures that higher\u2011priority work can resume. Other options (e.g., preemption, retry, lock ordering) are possible in real operating systems, but the logs show that the chosen strategy was the one implemented by Procura."
+   ]
+  },
+  {
+   "id": "dl-victim",
+   "scenario": "deadlock",
+   "grounded": false,
+   "passes": 0,
+   "trials": 3,
+   "unavailable": 0,
+   "failures": [
+    "missing /\\b(?:pid ?1|p1)\\b/",
+    "missing /cycle|circular|deadlock/",
+    "missing /lowest/"
+   ],
+   "answers": [
+    "There is no incident record indicating why the **Weekly grocery run** (pid\u202f3) entered the TERMINATED state.  \nAccording to the Process\u202fManagement state machine, a process can reach TERMINATED only by being **killed** or by **crashing** while in any non\u2011final state (READY, RUNNING, BLOCKED). Since we have no evidence of a kill signal, a crash, or a scheduler decision to terminate it, the simulation did not provide a specific reason.\n\nBecause the state transition is legitimate (TERMINATED is a final state with no further transitions allowed), the scheduler\u2019s action is **consistent with the model**. However, without a recorded trigger (e.g., an explicit kill request or an error leading to a crash), we cannot say whether the termination was the *right* choice; it is simply the only transition permitted from the given states when the process is removed.",
+    "**Why was it terminated?**  \nThere are no incident facts recorded for the process **pid\u202f=\u202f3**.  The state machine in the knowledge base shows that a process can reach\u202fTERMINATED only if it is killed (by the scheduler, a user, or the system) or crashes while in RUNNING or BLOCKED.  Since the simulator\u2019s logs contain no such event for this process, we cannot determine a specific cause from the evidence presented.\n\n**Was that the right choice?**  \nBecause the logs do not indicate an explicit reason for termination, we cannot assess whether the action was appropriate.  In a real system, a termination would be considered correct only if it was caused by an intended kill, a fatal error, or a policy violation.  Without that information, the termination cannot be evaluated as right or wrong.",
+    "**Why was the task in the TERMINATED state?**  \nThe state\u2011machine rules in the Process_Management knowledge base specify that a process can reach TERMINATED only when it **crashes** or is **killed** by the scheduler (or an external signal). Since no incident facts were recorded for *pid\u202f3* (Weekly grocery run), the simulator has no evidence of a crash, kill, or other event that could have forced the transition. Therefore, the only possible explanation\u2014given the state machine\u2014is that the process entered TERMINATED through one of those two mechanisms.\n\n**Was that the right choice?**  \nBecause the simulator did not record any event leading to termination, we cannot judge whether the action was appropriate. If the process had simply finished its work, the correct final state would have been COMPLETED, not TERMINATED. If it was killed due to a system policy (e.g., exceeding a resource limit), then TERMINATED would be the correct outcome. Without evidence of a violation or error, we cannot assert that the termination was necessary or incorrect."
+   ]
+  },
+  {
+   "id": "dl-survivor",
+   "scenario": "deadlock",
+   "grounded": true,
+   "passes": 3,
+   "trials": 3,
+   "unavailable": 0,
+   "failures": [],
+   "answers": [
+    "After the deadlock was detected, Procura\u2019s rule chose the process with the lowest effective priority in the cycle \u2013 **pid\u202f3** \u2013 for termination.  \n- **pid\u202f3** was killed, releasing its 20 database connections.  \n- The resources that **pid\u202f1** was holding (64 file handles) were kept, but because the deadlock cycle was broken, **pid\u202f1** was moved from BLOCKED back to **READY**.\n\nSo, the task *Finish OS term paper* (pid\u202f1) was returned to the READY state, with its 64 file handles still held, and the system was free to schedule it again.",
+    "After the dead\u2011lock was detected, Procura\u2019s dead\u2011lock rule chose the process with the lowest effective priority in the cycle \u2013 **pid\u202f3** \u2013 and terminated it.  \nTermination released all of pid\u202f3\u2019s resources (its 20 database connections).  \nThe rule then moved any other blocked processes in the cycle to the READY queue.  \nBecause **pid\u202f1** was waiting on the resource held by pid\u202f3, it was the other member of the cycle; it was unblocked and placed back into the READY state.  \n\nSo, the task **pid\u202f1 (\"Finish OS term paper\")** was returned to the READY queue and is eligible to be dispatched again by EEVDF according to its priority\u2011derived weight.",
+    "After the deadlock was detected, Procura\u2019s recovery rule chose to terminate **pid\u202f3** (the process with the lowest effective priority in the cycle).  \nTermination of pid\u202f3 released its 20 database connections and freed any other resources it held. Because the cycle was broken, the remaining blocked process \u2013 **pid\u202f1** \u2013 was moved back into the **READY** queue.\n\nAt the moment the recovery completed, pid\u202f1 was still holding its 64 file handles; those resources were not released because only the terminated process releases them. No CPU time was granted yet\u2014CPU usage was 0\u202f% and the process was simply ready to run according to EEVDF when its next slice became due. Thus, the task \u201cFinish OS term paper\u201d went from BLOCKED to READY, remaining in the system with its file handles still allocated."
+   ]
+  },
+  {
+   "id": "dl-survivor",
+   "scenario": "deadlock",
+   "grounded": false,
+   "passes": 0,
+   "trials": 3,
+   "unavailable": 0,
+   "failures": [
+    "missing /releas|freed|free/"
+   ],
+   "answers": [
+    "No state change for **Finish\u202fOS\u202fterm\u202fpaper** was recorded. Since the incident facts contain no mention of this task being affected by the deadlock, its state, priority, or scheduling status remain as listed: READY, High priority, still awaiting its 180\u202fs CPU burst.",
+    "After the deadlock was resolved, the process \u201cFinish\u202fOS\u202fterm\u202fpaper\u201d remained in the READY state. No further state changes or actions were recorded for it, so it was still waiting to be dispatched by Procura\u2019s EEVDF scheduler.",
+    "The \u201cFinish OS term paper\u201d process was **in the READY state** before the deadlock happened.  \nBecause the incident facts contain no events for this process, the deadlock resolution had **no effect on it**\u2014its priority, burst time, memory and CPU requirements remained unchanged.  \n\nIn other words, once the deadlock was cleared, the task simply stayed ready to be scheduled by EEVDF according to its high priority (nice\u202f=\u202f\u20115 \u2192 larger weight, more frequent slices). No new state transition or resource acquisition was recorded for it."
+   ]
+  },
+  {
+   "id": "dl-resources",
+   "scenario": "deadlock",
+   "grounded": true,
+   "passes": 3,
+   "trials": 3,
+   "unavailable": 0,
+   "failures": [],
+   "answers": [
+    "The deadlock involved two types of exclusive\u2011access resources:\n\n| Resource type | Amount held by a process in the cycle | Total in the cycle |\n|---------------|---------------------------------------|--------------------|\n| File handles  | 64 (held by pid\u202f1)                     | 64 |\n| Database connections | 20 (held by pid\u202f3)              | 20 |\n\nPid\u202f1 was holding all 64 file handles and waiting for a resource that pid\u202f3 was holding; pid\u202f3 held all 20 database connections and waited on pid\u202f1. Thus the circular wait was formed by those two resource sets.",
+    "**Deadlock\u2011involved resources**\n\n| Resource type | Quantity held by the cycle | Quantity held by the victim (pid\u202f3) | Quantity held by the other participant (pid\u202f1) |\n|---------------|---------------------------|-------------------------------------|---------------------------------------------|\n| File handles  | 64 (all available)       | 0 (pid\u202f1 holds them)                 | 64 (pid\u202f1 holds them)                       |\n| Database connections | 20 (all available) | 20 (pid\u202f3 holds them) | 0 (pid\u202f3 waits for them) |\n\n*Explanation:*  \nThe system detected a circular wait: **pid\u202f1** was holding 64 file handles and waiting for a resource held by **pid\u202f3**; **pid\u202f3** was holding 20 database connections and waiting for a resource held by **pid\u202f1**. According to the deadlock rule, the lowest\u2011priority process in the cycle (pid\u202f3) was terminated, freeing its 20 database connections. This release allowed the cycle to break, and the remaining blocked process (pid\u202f1) was moved to READY. The file handles remained held by pid\u202f1 until it eventually releases them.",
+    "The deadlock involved two types of exclusive\u2011access resources:\n\n* **File handles** \u2013 64 handles were held by **pid\u202f1** and were not released.  \n* **Database connections** \u2013 20 connections were held by **pid\u202f3** and were not released.\n\nThese resources created the circular wait: pid\u202f1 held the file handles and waited for a database connection from pid\u202f3, while pid\u202f3 held the database connections and waited for the file handles from pid\u202f1."
+   ]
+  },
+  {
+   "id": "dl-resources",
+   "scenario": "deadlock",
+   "grounded": false,
+   "passes": 0,
+   "trials": 3,
+   "unavailable": 0,
+   "failures": [
+    "missing /\\b20\\b/",
+    "missing /\\b64\\b/",
+    "missing /database/",
+    "missing /file/"
+   ],
+   "answers": [
+    "No incident facts were recorded for **pid\u202f1 (Finish OS term paper)**, so the simulation did not show any resources being held or requested by this process. Therefore, no deadlock involving this process was detected, and no resources were identified or quantified.",
+    "There was no deadlock involving **pid\u202f=\u202f1**.  \nThe incident facts for this process contain no record of a wait, a resource hold, or a cycle of waiting processes, so no resources were involved in a deadlock for this process.",
+    "Because there are no incident facts recorded for process\u202fpid\u202f1, the simulation does not show any resource\u2011allocation activity, wait states, or cycle detection for this process. Without evidence that it acquired or held any exclusive resources (such as a file handle, database connection, memory segment, or lock) while simultaneously waiting for another, we cannot identify or quantify any resources involved in a deadlock. Therefore, based on the available facts, no deadlock resources can be reported for this process."
+   ]
+  },
+  {
+   "id": "c-eevdf",
+   "scenario": "concept",
+   "grounded": true,
+   "passes": 3,
+   "trials": 3,
+   "unavailable": 0,
+   "failures": [],
+   "answers": [
+    "EEVDF differs from Round\u2011Robin in two key ways:\n\n1. **Weighting** \u2013 In Round\u2011Robin every ready task receives the same quantum.  \n   EEVDF gives each task a share proportional to its weight, so a high\u2011weight task is dispatched more often than a low\u2011weight one.\n\n2. **Eligibility and deadlines** \u2013 Round\u2011Robin cycles through tasks blindly.  \n   EEVDF keeps a *lag* for each task. A task is eligible only when its lag \u2265\u202f0 (meaning it is owed CPU time). Among eligible tasks it picks the one whose *virtual deadline* (eligible time + slice\u202f\u00d7\u202fweight) is earliest. This mechanism guarantees that no task can fall too far behind its fair share while still preventing starvation of low\u2011weight tasks.",
+    "EEVDF and Round\u00a0Round differ in how they allocate CPU time:\n\n- **Round\u00a0Round**: treats every ready task exactly the same. It cycles through the ready queue with a fixed time quantum. Each task waits at most \\((n-1)\\times\\text{quantum}\\) between turns, where \\(n\\) is the number of ready tasks. The share each task receives is equal, regardless of any weight.\n\n- **EEVDF**: is weighted fair sharing. A task\u2019s eligibility is based on its *lag* (how far behind its fair share it is). Among eligible tasks, EEVDF dispatches the one with the earliest virtual deadline, calculated from the eligible time plus a slice scaled by the task\u2019s weight. A higher\u2011weight task gets dispatched more often, but a low\u2011weight task is never starved because its lag grows until it becomes eligible again.\n\nThus, Round\u00a0Round gives equal, non\u2011weighted CPU time, while EEVDF gives each task a share proportional to its weight and ensures no task can be starved.",
+    "**EEVDF vs. Round\u202fRobin**\n\n| Feature | Round\u202fRobin | EEVDF |\n|---------|-------------|-------|\n| **Sharing policy** | Equal\u2011sharing: every ready task gets the same fixed quantum in rotation. | Weighted\u2011fair sharing: each task receives a CPU share proportional to its weight. |\n| **Eligibility** | All ready tasks are always eligible. | A task is eligible only when its lag \u2265\u202f0 (i.e., it is owed time). |\n| **Dispatch order** | Cycles through ready tasks with no priority. | Chooses the eligible task with the earliest virtual deadline (eligible time\u202f+\u202fscaled slice). |\n| **Starvation** | Can happen if a task is always at the end of the rotation. | A low\u2011weight task\u2019s lag grows until it becomes eligible, guaranteeing it will run eventually. |\n| **Dynamic slice** | Fixed quantum for every task. | Tasks can request a shorter slice to get earlier deadlines. |\n\n**Bottom line:** Round\u202fRobin treats all tasks identically, giving each a fixed time slice per rotation. EEVDF distributes CPU time proportionally to task weights, keeps track of lag to avoid starvation, and selects the next task based on the earliest virtual deadline rather than a simple rotation."
+   ]
+  },
+  {
+   "id": "c-mlfq",
+   "scenario": "concept",
+   "grounded": true,
+   "passes": 3,
+   "trials": 3,
+   "unavailable": 0,
+   "failures": [],
+   "answers": [
+    "Multilevel\u2011feedback queue (MLFQ) avoids starving long jobs by giving every job a **periodic priority boost** (Rule\u202f5).  \n- While a job is running in a high\u2011priority queue, its time\u2011slice (quantum) is short, so short or interactive jobs finish quickly and stay at high priority.  \n- Long CPU\u2011bound jobs use a lot of CPU time; each time they use up their quantum the scheduler demotes them to a lower\u2011priority queue.  \n- However, after a fixed **boost interval\u202fS**, the scheduler *re\u2011enqueues* all jobs to the highest priority queue.  \n- This periodic boost ensures that no job can remain in a low\u2011priority queue forever; after at most one boost interval it regains a high priority, preventing indefinite waiting.  \n\nThus MLFQ\u2019s starvation guarantee comes from the **boost interval** that periodically resets all jobs\u2019 priorities, guaranteeing that a long job will eventually run again even if new short jobs keep arriving.",
+    "MLFQ avoids starving long jobs by giving every job a periodic priority boost (Rule\u202f5). After a job has spent a fixed amount of time in the lowest\u2011priority queue, it is \u201cboosted\u201d back to a higher queue. This guarantees that a long CPU\u2011bound job will eventually move up the queue hierarchy, preventing it from remaining forever in the lowest queue and waiting indefinitely. The boost interval\u202fS acts as the starvation bound for MLFQ.",
+    "**How MLFQ avoids starving long jobs**\n\nMulti\u2011Level Feedback Queue (MLFQ) keeps every job in a priority queue that reflects how much CPU it has already used.  \nWhen a job\u2019s cumulative CPU time at a given level reaches its quantum, the scheduler demotes it to the next\u2011lower queue.  \nPeriodically, a **priority boost** (Rule\u202f5) moves all jobs back up one level.  \nBecause the boost occurs at a fixed interval **S**, even a job that has been relegated to the lowest queue is guaranteed to return to a higher queue within that interval, preventing it from waiting forever.  \n\nThus, the combination of cumulative accounting and periodic boosts bounds starvation for long, CPU\u2011bound jobs, ensuring they eventually receive CPU time even when short jobs keep arriving."
+   ]
+  },
+  {
+   "id": "c-jain",
+   "scenario": "concept",
+   "grounded": true,
+   "passes": 1,
+   "trials": 3,
+   "unavailable": 0,
+   "failures": [
+    "forbidden /(?<![\\d/])0\\s*(?:to|\u2013|-|and)\\s*1\\b(?!\\s*/)/"
+   ],
+   "answers": [
+    "**Jain\u2019s Fairness Index**  \nThe index measures how evenly a resource (e.g., CPU time) is shared among *n* entities.  \nIt is calculated as  \n\n\\[\nJ \\;=\\; \\frac{(\\sum_{i=1}^{n} x_i)^2}{\\,n \\, \\sum_{i=1}^{n} x_i^2}\n\\]\n\nwhere \\(x_i\\) is the amount of resource received by entity *i*.\n\n**Range of values**  \n- **Upper bound**: \\(J = 1\\) \u2013 every entity receives exactly the same share.  \n- **Lower bound**: \\(J = \\frac{1}{n}\\) \u2013 one entity receives all of the resource while the others receive none.  \n\nThus the index can take any value between \\(1/n\\) and \\(1\\). It is not measured on a 0 to 1 scale; instead, 1 represents perfect equality and \\(1/n\\) represents maximum unfairness.",
+    "**Jain\u2019s Fairness Index**  \nA metric that quantifies how evenly a shared resource (e.g., CPU time) is distributed among *n* entities. It is computed as  \n\n\\[\nJ = \\frac{(\\sum_{i=1}^{n} x_i)^2}{\\,n \\,\\sum_{i=1}^{n} x_i^2\\,}\n\\]\n\nwhere \\(x_i\\) is the amount of resource received by entity *i*.\n\n**Possible values**  \n* Range: **\\(1/n\\) to 1**  \n  * \\(J = 1\\) \u2013 perfect fairness; every entity receives exactly the same share.  \n  * \\(J = 1/n\\) \u2013 extreme unfairness; one entity receives all the resource while the others receive none.\n\nIn Procura, the index is applied to the *total CPU time* each task obtains, so all six scheduling algorithms give the same \\(J\\) for a fixed workload, revealing fairness only in the *amount* of CPU, not in the *timing* of its acquisition.",
+    "**Jain\u2019s Fairness Index (J)**  \nJ = (\u03a3\u202fx_i)\u00b2\u202f/\u202f(n\u202f\u00b7\u202f\u03a3\u202fx_i\u00b2)\n\n* *x_i* = amount of the resource (e.g., CPU time) received by entity *i*  \n* *n* = number of entities\n\n**What it measures**  \nIt quantifies how evenly a resource is shared among *n* entities. A value of **1** means every entity received exactly the same share; a value of **1/n** means one entity received all the resource while the others received none.\n\n**Possible values**  \n* Range: **1/n\u202f\u2264\u202fJ\u202f\u2264\u202f1**  \n* Not a 0\u20131 metric; the minimum is 1/n (e.g., 0.166 for six entities) and the maximum is 1."
+   ]
+  },
+  {
+   "id": "c-banker",
+   "scenario": "concept",
+   "grounded": true,
+   "passes": 3,
+   "trials": 3,
+   "unavailable": 0,
+   "failures": [],
+   "answers": [
+    "Banker\u2019s Algorithm is rarely used in production operating systems because it requires information and conditions that real systems almost never have:\n\n1. **Advance knowledge of maximum claims** \u2013 The algorithm needs each process\u2019s *maximum* future resource usage before it ever runs. In practice, operating systems and databases rarely know a process\u2019s peak resource needs ahead of time.\n\n2. **Fixed process population** \u2013 Banker\u2019s Algorithm assumes a static set of processes. Real systems continuously create and terminate processes, so the resource\u2011claim snapshot quickly becomes stale.\n\n3. **Capacity reservation** \u2013 To stay safe, the algorithm reserves resources up to the declared maxima, even if the peaks never occur. This wastes capacity that could otherwise be used by other workloads.\n\nBecause of these practical limitations, Procura\u2019s implementation keeps a Banker\u2011style avoidance mode only as a textbook baseline and has it switched off by default.",
+    "Banker\u2019s algorithm is seldom used in real systems because it requires two conditions that production environments rarely satisfy:\n\n1. **Advance knowledge of every process\u2019s maximum resource claim** \u2013 The algorithm must know, before execution, the maximum number of each resource a process may ever request. In practice, operating systems and databases cannot predict a process\u2019s peak demand; resource usage is dynamic and often unpredictable.\n\n2. **A fixed, small process population** \u2013 Banker\u2019s algorithm assumes the set of processes is known and limited. In a typical OS, the number of concurrently running processes can grow unboundedly and new processes appear continually, making the bookkeeping of maximum claims infeasible.\n\nBecause of these practical constraints, the algorithm would waste capacity by reserving resources against peaks that may never materialise, and it would be too complex to maintain in a highly dynamic environment. As a result, Procura keeps a Bank\u2011er\u2019s\u2011style avoidance mode only for educational purposes and disables it by default.",
+    "Banker\u2019s algorithm is rarely used in production systems because it requires two things that real operating systems almost never have:\n\n1. **Advance knowledge of each process\u2019s maximum resource demand** \u2013 The algorithm needs to know, before a process runs, how many units of every resource it will eventually need. In practice, processes often request resources unpredictably or their total demand changes at run time, so this information cannot be supplied reliably.\n\n2. **A fixed, known population of processes** \u2013 The algorithm assumes a static set of processes that will exist during the lifetime of the system. Real systems continually spawn and terminate processes, making the \u201cfixed population\u201d assumption invalid.\n\nBecause of these requirements, Banker\u2019s algorithm ends up reserving more capacity than is actually needed (wasting resources that may never be used) and is difficult to integrate into dynamic, multitasking operating systems. Procura therefore keeps a Banker's\u2011style avoidance mode only for educational purposes and disables it by default."
+   ]
+  },
+  {
+   "id": "c-modz",
+   "scenario": "concept",
+   "grounded": true,
+   "passes": 3,
+   "trials": 3,
+   "unavailable": 0,
+   "failures": [],
+   "answers": [
+    "The modified Z\u2011score replaces the mean and standard deviation with the median and the median absolute deviation (MAD). It is calculated as  \n\n\\[\nM_i = 0.6745 \\times \\frac{x_i - \\text{median}}{\\text{MAD}}.\n\\]\n\nAn observation is flagged as an outlier when \\(|M_i| > 3.5\\).",
+    "The modified Z\u2011score replaces the mean with the **median** and the standard deviation with the **median absolute deviation (MAD)**.",
+    "The modified\u202fZ\u2011score replaces the mean and standard deviation with the **median** of the data and the **median absolute deviation (MAD)**. It computes  \n\n\\( M_i = 0.6745 \\times \\dfrac{x_i - \\text{median}}{\\text{MAD}} \\).  \n\nThus, instead of using the mean, it uses the median, and instead of using the standard deviation, it uses MAD."
+   ]
+  }
+ ]
+}

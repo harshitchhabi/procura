@@ -99,5 +99,8 @@ def summarize(result: dict[str, Any], num_machines: int = 1, starvation_threshol
         "average_waiting_time": round(average_waiting_time(per_process), 2),
         "utilization": round(utilization(gantt, num_machines), 4),
         "fairness_index": round(fairness_index(list(cpu_time_per_pid.values())), 4),
+        "delay_fairness_index": result["metrics"]["delay_fairness_index"],
+        "average_bounded_slowdown": result["metrics"]["average_bounded_slowdown"],
+        "max_bounded_slowdown": result["metrics"]["max_bounded_slowdown"],
         "starvation": starvation_metrics(per_process, starvation_threshold),
     }

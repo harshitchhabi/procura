@@ -11,6 +11,8 @@ being extractive rather than pretending to be a generated answer.
 from __future__ import annotations
 
 import os
+import re
+import time
 from typing import Any, Optional
 
 from rag.retrieval import SearchResult, search
@@ -62,7 +64,11 @@ def _build_prompt(
         "incident facts as ground truth about what happened in this simulation: "
         "state causes and actions only as they appear there, and use the "
         "knowledge-base excerpts to explain the concept, not to invent extra "
-        "causes (such as fragmentation) that the facts do not show.\n\n"
+        "causes (such as fragmentation) that the facts do not show. Use units "
+        "exactly as written in the facts (file handles, database connections, "
+        "MB of memory, % of CPU, Mbps) and never invent a unit. Do not call an "
+        "action the only possible one unless the facts say so: real systems also "
+        "have other options, such as preemption, retry or lock ordering.\n\n"
         f"{_format_process_context(process)}\n\n"
         f"{_format_incident_facts(incident_facts)}\n\n"
         f"Knowledge base excerpts:\n{context_blocks}\n\n"
@@ -70,73 +76,85 @@ def _build_prompt(
     )
 
 
-def _call_groq(prompt: str, api_key: str) -> Optional[str]:
+_RETRY_HINT = re.compile(r"try again in ([0-9.]+)\s*(ms|s)", re.I)
+
+
+def _post_json(url: str, headers: dict[str, str], body: dict[str, Any], attempts: int = 3) -> tuple[Optional[dict], Optional[str]]:
+    """POST and return (json, None), or (None, reason). Retries rate limits (429)
+    and transient server errors, waiting as long as the provider asks (capped),
+    so a busy minute on a free tier does not silently become an offline answer."""
+    import httpx
+
+    reason = "request_failed"
+    for attempt in range(attempts):
+        try:
+            resp = httpx.post(url, headers=headers, json=body, timeout=45.0)
+        except httpx.HTTPError:
+            reason = "network_error"
+            time.sleep(1.0 + attempt)
+            continue
+        if resp.status_code == 200:
+            return resp.json(), None
+        if resp.status_code == 429 or resp.status_code >= 500:
+            reason = "rate_limited" if resp.status_code == 429 else "provider_error"
+            wait = 0.0
+            if resp.headers.get("retry-after"):
+                try:
+                    wait = float(resp.headers["retry-after"])
+                except ValueError:
+                    pass
+            if not wait:
+                m = _RETRY_HINT.search(resp.text)
+                if m:
+                    wait = float(m.group(1)) / (1000.0 if m.group(2).lower() == "ms" else 1.0) + 0.5
+            time.sleep(min(max(wait, 1.0), 15.0))
+            continue
+        return None, f"http_{resp.status_code}"
+    return None, reason
+
+
+def _call_groq(prompt: str, api_key: str) -> tuple[Optional[str], Optional[str]]:
+    # gpt-oss is a reasoning model: reasoning tokens count against max_tokens, so a
+    # tight budget can leave the visible answer empty. 1500 leaves room for both.
+    data, reason = _post_json(
+        "https://api.groq.com/openai/v1/chat/completions",
+        {"Authorization": f"Bearer {api_key}", "content-type": "application/json"},
+        {"model": GROQ_MODEL, "messages": [{"role": "user", "content": prompt}], "max_tokens": 1500, "reasoning_effort": "low"},
+    )
+    if data is None:
+        return None, reason
     try:
-        import httpx
-
-        resp = httpx.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}", "content-type": "application/json"},
-            json={
-                "model": GROQ_MODEL,
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 600,
-                "reasoning_effort": "low",
-            },
-            timeout=20.0,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        content = data["choices"][0]["message"]["content"]
-        return content.strip() or None
-    except Exception:
-        return None
+        content = (data["choices"][0]["message"].get("content") or "").strip()
+    except (KeyError, IndexError):
+        return None, "bad_response"
+    return (content, None) if content else (None, "empty_answer")
 
 
-def _call_anthropic(prompt: str, api_key: str) -> Optional[str]:
+def _call_anthropic(prompt: str, api_key: str) -> tuple[Optional[str], Optional[str]]:
+    data, reason = _post_json(
+        "https://api.anthropic.com/v1/messages",
+        {"x-api-key": api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
+        {"model": ANTHROPIC_MODEL, "max_tokens": 700, "messages": [{"role": "user", "content": prompt}]},
+    )
+    if data is None:
+        return None, reason
+    text = "".join(block.get("text", "") for block in data.get("content", [])).strip()
+    return (text, None) if text else (None, "empty_answer")
+
+
+def _call_openai(prompt: str, api_key: str) -> tuple[Optional[str], Optional[str]]:
+    data, reason = _post_json(
+        "https://api.openai.com/v1/chat/completions",
+        {"Authorization": f"Bearer {api_key}", "content-type": "application/json"},
+        {"model": OPENAI_MODEL, "messages": [{"role": "user", "content": prompt}], "max_tokens": 700},
+    )
+    if data is None:
+        return None, reason
     try:
-        import httpx
-
-        resp = httpx.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": ANTHROPIC_MODEL,
-                "max_tokens": 500,
-                "messages": [{"role": "user", "content": prompt}],
-            },
-            timeout=20.0,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        return "".join(block.get("text", "") for block in data.get("content", []))
-    except Exception:
-        return None
-
-
-def _call_openai(prompt: str, api_key: str) -> Optional[str]:
-    try:
-        import httpx
-
-        resp = httpx.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}", "content-type": "application/json"},
-            json={
-                "model": OPENAI_MODEL,
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 500,
-            },
-            timeout=20.0,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        return data["choices"][0]["message"]["content"]
-    except Exception:
-        return None
+        content = (data["choices"][0]["message"].get("content") or "").strip()
+    except (KeyError, IndexError):
+        return None, "bad_response"
+    return (content, None) if content else (None, "empty_answer")
 
 
 def _extractive_fallback(
@@ -144,6 +162,7 @@ def _extractive_fallback(
     chunks: list[SearchResult],
     process: Optional[dict[str, Any]],
     incident_facts: Optional[list[str]] = None,
+    fallback_reason: Optional[str] = None,
 ) -> str:
     if not chunks:
         return (
@@ -154,7 +173,8 @@ def _extractive_fallback(
         )
 
     lines = [
-        "[OFFLINE MODE - extractive answer, no LLM API key configured]",
+        "[OFFLINE MODE - extractive answer, no LLM API key configured]" if not fallback_reason
+        else f"[OFFLINE MODE - extractive answer; the language model did not answer ({fallback_reason}), so these are the retrieved passages]",
         f"Here are the most relevant knowledge-base passages for: \"{question}\"",
         "",
     ]
@@ -194,18 +214,17 @@ def answer_question(
     prompt = _build_prompt(question, chunks, process, incident_facts)
     generated: Optional[str] = None
     mode = "offline_extractive"
-    if groq_key:
-        generated = _call_groq(prompt, groq_key)
-        if generated:
-            mode = "groq"
-    if generated is None and anthropic_key:
-        generated = _call_anthropic(prompt, anthropic_key)
-        if generated:
-            mode = "anthropic"
-    if generated is None and openai_key:
-        generated = _call_openai(prompt, openai_key)
-        if generated:
-            mode = "openai"
+    fallback_reason: Optional[str] = None  # why a configured provider did not answer
+    for name, key, call in (("groq", groq_key, _call_groq), ("anthropic", anthropic_key, _call_anthropic), ("openai", openai_key, _call_openai)):
+        if generated is None and key:
+            generated, why = call(prompt, key)
+            if generated:
+                mode, fallback_reason = name, None
+            else:
+                fallback_reason = f"{name}: {why}"
 
-    answer = generated if generated else _extractive_fallback(question, chunks, process, incident_facts)
-    return {"answer": answer, "mode": mode, "sources": sources}
+    answer = generated if generated else _extractive_fallback(question, chunks, process, incident_facts, fallback_reason)
+    result = {"answer": answer, "mode": mode, "sources": sources}
+    if fallback_reason:
+        result["fallback_reason"] = fallback_reason
+    return result

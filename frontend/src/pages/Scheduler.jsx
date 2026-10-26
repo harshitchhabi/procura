@@ -152,7 +152,16 @@ export default function Scheduler() {
               <MetricTile label="Avg Response" value={`${result.metrics.average_response_time} min`} />
               <MetricTile label="CPU Utilization" value={`${result.metrics.cpu_utilization}%`} />
               {result.metrics.fairness_index !== undefined && (
-                <MetricTile label="Jain's Fairness Index" value={result.metrics.fairness_index} />
+                <MetricTile label="Fairness of CPU share (Jain)" value={result.metrics.fairness_index} />
+              )}
+              {result.metrics.delay_fairness_index !== undefined && (
+                <MetricTile label="Fairness of delay (Jain)" value={result.metrics.delay_fairness_index} />
+              )}
+              {result.metrics.average_bounded_slowdown !== undefined && (
+                <MetricTile label="Avg Slowdown" value={`${result.metrics.average_bounded_slowdown}x`} />
+              )}
+              {result.metrics.max_bounded_slowdown !== undefined && (
+                <MetricTile label="Worst Slowdown" value={`${result.metrics.max_bounded_slowdown}x`} />
               )}
             </div>
             <table className="w-full text-xs">
@@ -164,6 +173,7 @@ export default function Scheduler() {
                   <th className="px-2 py-1.5">Turnaround</th>
                   <th className="px-2 py-1.5">Waiting</th>
                   <th className="px-2 py-1.5">Response</th>
+                  <th className="px-2 py-1.5">Slowdown</th>
                   {result.metrics.per_process[0]?.effective_priority_score !== undefined && (
                     <th className="px-2 py-1.5">Eff. Priority</th>
                   )}
@@ -178,6 +188,7 @@ export default function Scheduler() {
                     <td className="px-2 py-1.5">{row.turnaround_time}</td>
                     <td className="px-2 py-1.5">{row.waiting_time}</td>
                     <td className="px-2 py-1.5">{row.response_time}</td>
+                    <td className="px-2 py-1.5">{row.bounded_slowdown}x</td>
                     {row.effective_priority_score !== undefined && (
                       <td className="px-2 py-1.5">{row.effective_priority_score}</td>
                     )}

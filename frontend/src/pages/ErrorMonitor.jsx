@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import api from "../api.js";
+import Markdown from "../components/Markdown.jsx";
 
 const TYPE_COLORS = {
   memory_failure: "text-term-red",
@@ -78,8 +79,8 @@ export default function ErrorMonitor() {
               {e.diagnosis_text && (
                 <details className="mt-1">
                   <summary className="cursor-pointer text-sky-400">Diagnosis</summary>
-                  <div className="mt-1 whitespace-pre-wrap text-term-text/90 border-l-2 border-sky-400/40 pl-2">
-                    {e.diagnosis_text}
+                  <div className="mt-1 text-term-text/90 border-l-2 border-sky-400/40 pl-2">
+                    <Markdown text={e.diagnosis_text} />
                   </div>
                 </details>
               )}

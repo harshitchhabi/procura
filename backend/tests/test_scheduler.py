@@ -7,6 +7,8 @@ Shared example processes (arrival, burst):
     P4: arrival=3, burst=6
 """
 
+import pytest
+
 from os_sim.scheduler import (
     fcfs, sjf, round_robin, priority_scheduling, effective_priority_score,
     eevdf, mlfq, jains_fairness_index, run_schedule,
@@ -229,3 +231,30 @@ def test_fair_share_defaults_to_zero_when_no_usage_tracked():
     proc = {"priority": "Medium", "deadline": None, "ready_since": None,
             "memory_requirement": 0, "cpu_requirement": 0}
     assert effective_priority_score(proc) == effective_priority_score(proc, all_processes=[proc])
+
+
+# --- fairness over delay (the metric that, unlike Jain over total CPU, separates the policies) ---
+
+def test_bounded_slowdown_is_bounded_and_never_below_one():
+    from os_sim.scheduler import bounded_slowdown
+
+    assert bounded_slowdown(turnaround=10, burst=5) == 2.0
+    assert bounded_slowdown(turnaround=4, burst=5) == 1.0       # cannot beat its own burst
+    assert bounded_slowdown(turnaround=10, burst=0.1) == 10.0    # denominator bounded at 1 minute, not 0.1
+
+
+def test_fcfs_slowdown_and_delay_fairness_match_hand_worked_values():
+    # turnarounds 5, 7, 14, 19 for bursts 5, 3, 8, 6 -> slowdowns 1, 7/3, 7/4, 19/6
+    m = fcfs(make_processes())["metrics"]
+    assert m["average_bounded_slowdown"] == pytest.approx((1 + 7 / 3 + 7 / 4 + 19 / 6) / 4, abs=1e-3)
+    assert m["max_bounded_slowdown"] == pytest.approx(19 / 6, abs=1e-3)
+    assert m["delay_fairness_index"] == pytest.approx(0.8328, abs=1e-3)
+    assert [r["bounded_slowdown"] for r in m["per_process"]][0] == 1.0
+
+
+def test_delay_fairness_separates_policies_that_total_cpu_fairness_cannot():
+    procs = make_processes()
+    fcfs_m, sjf_m = fcfs(procs)["metrics"], sjf(procs)["metrics"]
+    assert fcfs_m["fairness_index"] == sjf_m["fairness_index"]            # total CPU: identical by construction
+    assert fcfs_m["delay_fairness_index"] != sjf_m["delay_fairness_index"]  # delay: different
+    assert 0 < min(fcfs_m["delay_fairness_index"], sjf_m["delay_fairness_index"]) <= 1

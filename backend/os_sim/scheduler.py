@@ -233,6 +233,14 @@ def _relative_arrivals(processes: list[dict[str, Any]]) -> dict[int, float]:
 # ---------------------------------------------------------------------------
 
 
+SLOWDOWN_BOUND = 1.0  # minutes; keeps very short jobs from dominating (Feitelson's "bounded slowdown")
+
+
+def bounded_slowdown(turnaround: float, burst: float, bound: float = SLOWDOWN_BOUND) -> float:
+    """max(turnaround / max(burst, bound), 1). 1.0 means the job was never delayed."""
+    return max(turnaround / max(burst, bound), 1.0)
+
+
 def _build_metrics(
     processes_by_pid: dict[int, dict[str, Any]],
     gantt: list[dict[str, Any]],
@@ -246,6 +254,7 @@ def _build_metrics(
         last_end[pid] = slice_["end"]
 
     per_process = []
+    slowdowns: list[float] = []
     total_wait = total_turnaround = total_response = 0.0
     n = len(processes_by_pid)
     for pid, proc in processes_by_pid.items():
@@ -255,6 +264,7 @@ def _build_metrics(
         turnaround = completion - arrival
         waiting = turnaround - burst
         response = first_start.get(pid, arrival) - arrival
+        slowdown = bounded_slowdown(turnaround, burst)
         per_process.append(
             {
                 "pid": pid,
@@ -263,8 +273,10 @@ def _build_metrics(
                 "turnaround_time": round(turnaround, 2),
                 "waiting_time": round(waiting, 2),
                 "response_time": round(response, 2),
+                "bounded_slowdown": round(slowdown, 3),
             }
         )
+        slowdowns.append(slowdown)
         total_wait += waiting
         total_turnaround += turnaround
         total_response += response
@@ -281,13 +293,24 @@ def _build_metrics(
         cpu_time_per_pid[slice_["pid"]] = cpu_time_per_pid.get(slice_["pid"], 0.0) + (slice_["end"] - slice_["start"])
     fairness_index = round(jains_fairness_index(list(cpu_time_per_pid.values())), 4)
 
+    # Fairness over *delay*, not over total service. Every algorithm here runs
+    # each process to completion, so the index above is the same for all of
+    # them. Jain's index over each process's normalised service rate
+    # (1 / bounded slowdown) separates them: it is 1.0 only when every
+    # process is slowed down by the same factor.
+    service_rates = [1.0 / s for s in slowdowns]
+    waiting_fairness = round(jains_fairness_index(service_rates), 4) if service_rates else 0.0
+
     return {
         "per_process": per_process,
         "average_waiting_time": round(total_wait / n, 2) if n else 0.0,
         "average_turnaround_time": round(total_turnaround / n, 2) if n else 0.0,
         "average_response_time": round(total_response / n, 2) if n else 0.0,
+        "average_bounded_slowdown": round(sum(slowdowns) / n, 3) if n else 0.0,
+        "max_bounded_slowdown": round(max(slowdowns), 3) if slowdowns else 0.0,
         "cpu_utilization": cpu_utilization,
         "fairness_index": fairness_index,
+        "delay_fairness_index": waiting_fairness,
     }
 
 

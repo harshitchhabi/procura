@@ -23,7 +23,7 @@ from collections import deque
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from os_sim.resource_manager import ResourceManager
+from os_sim.resource_manager import ResourceManager, describe_amount
 
 ANOMALY_MULTIPLIER = 1.5
 HIGH_CPU_THRESHOLD = 80.0  # percent of CPU pool considered "high usage"
@@ -218,7 +218,7 @@ def detect_deadlock(resource_mgr: ResourceManager) -> Optional[dict[str, Any]]:
         members = list(dict.fromkeys(cycle))
         who = []
         for pid in members:
-            held = [f"{amt:g} {res}" for res, by_pid in resource_mgr.holders.items() for p, amt in by_pid.items() if p == pid and amt > 0]
+            held = [describe_amount(res, amt) for res, by_pid in resource_mgr.holders.items() for p, amt in by_pid.items() if p == pid and amt > 0]
             waits = sorted(resource_mgr.waits_for.get(pid, set()))
             who.append(f"pid {pid} holds {', '.join(held) or 'nothing'} and waits for pid {', '.join(map(str, waits))}")
         return {

@@ -203,5 +203,33 @@ def test_detect_deadlock_reports_who_holds_and_waits_for_what():
 
     details = detect_deadlock(rm)["details"]
 
-    assert "pid 1 holds 64 file and waits for pid 3" in details
-    assert "pid 3 holds 20 database and waits for pid 1" in details
+    assert "pid 1 holds 64 file handles and waits for pid 3" in details
+    assert "pid 3 holds 20 database connections and waits for pid 1" in details
+
+
+def _set_elapsed(pid, minutes):
+    """Pretend a RUNNING task started `minutes` minutes ago."""
+    import database
+    from datetime import datetime, timedelta, timezone
+
+    started = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).replace(tzinfo=None).isoformat()
+    database.update_process(pid, started_at=started)
+
+
+def test_burst_anomaly_end_to_end_ignores_steady_progress_and_flags_a_jump():
+    from recovery import detector
+
+    detector.reset_history()
+    rm = ResourceManager()
+    proc = process_manager.create_process(name="Long render", burst_time=100, memory_requirement=0)
+    process_manager.start_process(proc["pid"])
+
+    for elapsed in (10, 11, 12, 13, 14, 15, 16, 17):  # steady progress: ratio creeps up
+        _set_elapsed(proc["pid"], elapsed)
+        findings = run_detection([process_manager.get_process(proc["pid"])], rm)
+        assert not [f for f in findings if f["error_type"] == "burst_anomaly"], f"false alarm at {elapsed} min"
+
+    _set_elapsed(proc["pid"], 160)  # abrupt jump to 1.6x the estimate
+    findings = run_detection([process_manager.get_process(proc["pid"])], rm)
+    anomalies = [f for f in findings if f["error_type"] == "burst_anomaly"]
+    assert anomalies and anomalies[0]["pid"] == proc["pid"] and anomalies[0]["method"] == "ewma"

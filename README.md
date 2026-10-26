@@ -73,7 +73,24 @@ python -m benchmark.run_benchmark                 # synthetic Poisson workload, 
 python -m benchmark.run_benchmark --swf benchmark/sample_traces/sample.swf   # replay a real-format SWF trace
 ```
 
-Runs FCFS, SJF, Priority, Round Robin, EEVDF, and MLFQ against an identical workload and prints a comparison table (makespan, turnaround, waiting time, utilization, Jain's Fairness Index, starvation). See [`PAPER.md`](./PAPER.md) for a full write-up with real measured results and citations back to the research underlying these upgrades.
+Runs FCFS, SJF, Priority, Round Robin, EEVDF, and MLFQ against an identical workload and prints a comparison table (makespan, turnaround, waiting time, utilization, Jain's Fairness Index, starvation).
+
+**Multi-seed statistical study.** One seeded run shows one workload. `python -m benchmark.study` runs every policy on 50 independent workloads (25 at n = 300) in three families (Gamma run times, heavy-tailed run times, bursty arrivals), at sizes 30 / 100 / 300 and a load sweep, and reports each metric as mean ± 95% confidence interval plus paired differences against FCFS. Results are saved to `backend/benchmark/results/study.json`.
+
+Besides the textbook metrics it reports **bounded slowdown** and a second fairness index, **Jain's index over 1/slowdown** ("fairness of delay"). The classic index over total CPU received is identical for every work-conserving policy; the delay version is not, and separates them.
+
+**Real traces.** The Parallel Workloads Archive blocks automated downloads, so no archive trace is bundled. Download one by hand (for example NASA-iPSC-1993-3.1-cln.swf), unzip it, and run `python -m benchmark.run_benchmark --swf path/to/file.swf`.
+
+### 4b. Evaluating the assistant and the search
+
+```bash
+cd backend
+python -m rag.eval_retrieval     # 36 development + 20 held-out questions, original vs current tokenizer
+python -m rag.eval_grounding     # live model: 11 labelled questions x 3 trials, with and without the incident facts
+python -m rag.regrade_grounding  # re-grade saved answers with the current checks, no model calls
+```
+
+`eval_grounding` calls a real model, so it needs a key in `backend/.env` and is not part of `pytest`. Free tiers limit tokens per minute; Procura retries rate-limited calls using the provider's own "try again in N seconds" hint, and reports `fallback_reason` (for example `groq: rate_limited`) when a configured model could not answer, instead of silently serving the offline answer as if no key were set. See [`PAPER.md`](./PAPER.md) for a full write-up with real measured results and citations back to the research underlying these upgrades.
 
 ### 5. Tests
 
@@ -82,7 +99,7 @@ cd backend
 pytest tests/ -v
 ```
 
-85 tests cover the scheduler algorithms (FCFS/SJF/Priority/Round Robin against hand-worked textbook examples, plus EEVDF/MLFQ shape/sanity checks and Jain's Fairness Index), process state-machine validation, resource allocation/over-capacity rejection, deadlock cycle detection (both a true circular-wait case and a non-circular negative case), the lock-ordering violation checker and timeout-based abort, the EWMA/Modified-Z-score/CUSUM statistical anomaly detectors, the recovery engine's preemption rules (never evict higher-priority work, only evict when it actually frees enough, retry when memory has already been freed), grounding of AI answers in recorded incident facts, knowledge-base retrieval for every concept Procura implements (EEVDF, MLFQ, Jain's index, fair-share, EWMA/CUSUM, lock ordering, preemption rules), the benchmark module's SWF parser and metric functions, and FastAPI `TestClient` smoke tests. Tests never call a live LLM, even if your `.env` has a key.
+99 tests cover the scheduler algorithms (FCFS/SJF/Priority/Round Robin against hand-worked textbook examples, plus EEVDF/MLFQ shape/sanity checks and Jain's Fairness Index), process state-machine validation, resource allocation/over-capacity rejection, deadlock cycle detection (both a true circular-wait case and a non-circular negative case), the lock-ordering violation checker and timeout-based abort, the EWMA/Modified-Z-score/CUSUM statistical anomaly detectors, the recovery engine's preemption rules (never evict higher-priority work, only evict when it actually frees enough, retry when memory has already been freed), grounding of AI answers in recorded incident facts, knowledge-base retrieval for every concept Procura implements (EEVDF, MLFQ, Jain's index, fair-share, EWMA/CUSUM, lock ordering, preemption rules), the benchmark module's SWF parser and metric functions, and FastAPI `TestClient` smoke tests. Tests never call a live LLM, even if your `.env` has a key.
 
 Screenshots of every screen, captured from the running system, are in [`docs/screenshots/`](./docs/screenshots/).
 

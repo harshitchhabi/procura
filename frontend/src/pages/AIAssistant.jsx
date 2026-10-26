@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import api from "../api.js";
+import Markdown from "../components/Markdown.jsx";
 
 export default function AIAssistant() {
   const [messages, setMessages] = useState([
@@ -31,7 +32,7 @@ export default function AIAssistant() {
     setLoading(true);
     try {
       const res = await api.ask(q, pid ? Number(pid) : undefined);
-      setMessages((m) => [...m, { role: "assistant", text: res.answer, mode: res.mode, sources: res.sources }]);
+      setMessages((m) => [...m, { role: "assistant", text: res.answer, mode: res.mode, sources: res.sources, fallbackReason: res.fallback_reason }]);
     } catch (err) {
       setMessages((m) => [...m, { role: "assistant", text: `Error: ${err.message}`, mode: "error" }]);
     } finally {
@@ -61,7 +62,7 @@ export default function AIAssistant() {
         {messages.map((m, i) => (
           <div key={i} className={m.role === "user" ? "text-right" : "text-left"}>
             <div
-              className={`inline-block max-w-[85%] rounded px-3 py-2 whitespace-pre-wrap text-left ${
+              className={`inline-block max-w-[85%] rounded px-3 py-2 text-left ${
                 m.role === "user"
                   ? "bg-term-green/10 border border-term-green/40 text-term-text"
                   : m.role === "system"
@@ -69,9 +70,11 @@ export default function AIAssistant() {
                   : "bg-term-border/20 border border-term-border"
               }`}
             >
-              {m.text}
+              {m.role === "assistant" ? <Markdown text={m.text} /> : <span className="whitespace-pre-wrap">{m.text}</span>}
               {m.mode && (
-                <div className="mt-1 text-[10px] text-term-amber uppercase tracking-wider">mode: {m.mode}</div>
+                <div className="mt-1 text-[10px] text-term-amber uppercase tracking-wider">
+                  mode: {m.mode}{m.fallbackReason ? ` (${m.fallbackReason})` : ""}
+                </div>
               )}
             </div>
           </div>

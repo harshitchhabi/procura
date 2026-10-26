@@ -19,7 +19,7 @@ from benchmark import metrics as bench_metrics
 from benchmark import workload as bench_workload
 from os_sim import process_manager, scheduler
 from os_sim.process_manager import ProcessNotFoundError
-from os_sim.resource_manager import RESOURCE_NAMES, ResourceManager
+from os_sim.resource_manager import RESOURCE_NAMES, ResourceManager, describe_amount
 from os_sim.states import InvalidTransitionError
 from rag.assistant import answer_question
 from recovery import diagnosis, recovery
@@ -306,12 +306,13 @@ def _incident_facts_for(pid: int, limit: int = 3) -> list[str]:
         if rule:
             fact += f" Rule applied: {rule}"
         facts.append(fact)
-    pools = ", ".join(
-        f"{name} {u['allocated']:g}/{u['capacity']:g}" for name, u in resource_manager.utilization().items()
+    pools = "; ".join(
+        f"{name}: {describe_amount(name, u['allocated'])} of {u['capacity']:g} in use"
+        for name, u in resource_manager.utilization().items()
     )
     facts.append(
         f"Current simulated resources (now, after any recovery actions above; not at the time "
-        f"of the failure), allocated/capacity: {pools}."
+        f"of the failure): {pools}."
     )
     return facts
 
