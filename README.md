@@ -49,6 +49,22 @@ python -m cli.procura_top
 
 This renders a live, polling `htop`-style dashboard: a color-coded process table, resource utilization bars, and a scrolling "AI SYSTEM" feed of diagnosis/recovery events -- the same live simulation data as the web dashboard, viewed as a literal terminal process monitor.
 
+### 3b. Demo: create a deadlock and watch Procura resolve it
+
+With a freshly seeded backend (`python seed_data.py`), build a circular wait between two tasks: each takes a whole pool, then asks for what the other holds.
+
+```bash
+A=http://localhost:8000; J="Content-Type: application/json"
+curl -X POST $A/resources/allocate -H "$J" -d '{"pid":1,"resource":"file","amount":64}'
+curl -X POST $A/resources/allocate -H "$J" -d '{"pid":3,"resource":"database","amount":20}'
+curl -X POST $A/resources/allocate -H "$J" -d '{"pid":1,"resource":"database","amount":5}'   # fails: P1 now waits for P3
+curl -X POST $A/resources/allocate -H "$J" -d '{"pid":3,"resource":"file","amount":5}'       # fails: P3 now waits for P1
+curl $A/resources                                                                            # waiting_for_graph: {1:[3], 3:[1]}
+curl -X POST $A/detect                                                                       # detect -> AI diagnosis -> recovery
+```
+
+`/detect` reports the cycle with who holds and waits for what, has the AI explain it, and applies the fixed deadlock rule: terminate the lowest-priority task in the cycle (P3), release its resources, and return the other (P1) to READY. Ask the assistant about P3 on the AI Assistant screen to see the explanation grounded in the logged cycle and the rule applied. (PowerShell users: use `Invoke-RestMethod` with `-ContentType "application/json"`, as in the demo script.)
+
 ### 4. Benchmarking
 
 ```bash
@@ -66,7 +82,7 @@ cd backend
 pytest tests/ -v
 ```
 
-83 tests cover the scheduler algorithms (FCFS/SJF/Priority/Round Robin against hand-worked textbook examples, plus EEVDF/MLFQ shape/sanity checks and Jain's Fairness Index), process state-machine validation, resource allocation/over-capacity rejection, deadlock cycle detection (both a true circular-wait case and a non-circular negative case), the lock-ordering violation checker and timeout-based abort, the EWMA/Modified-Z-score/CUSUM statistical anomaly detectors, the recovery engine's preemption rules (never evict higher-priority work, only evict when it actually frees enough, retry when memory has already been freed), grounding of AI answers in recorded incident facts, knowledge-base retrieval for every concept Procura implements (EEVDF, MLFQ, Jain's index, fair-share, EWMA/CUSUM, lock ordering, preemption rules), the benchmark module's SWF parser and metric functions, and FastAPI `TestClient` smoke tests. Tests never call a live LLM, even if your `.env` has a key.
+85 tests cover the scheduler algorithms (FCFS/SJF/Priority/Round Robin against hand-worked textbook examples, plus EEVDF/MLFQ shape/sanity checks and Jain's Fairness Index), process state-machine validation, resource allocation/over-capacity rejection, deadlock cycle detection (both a true circular-wait case and a non-circular negative case), the lock-ordering violation checker and timeout-based abort, the EWMA/Modified-Z-score/CUSUM statistical anomaly detectors, the recovery engine's preemption rules (never evict higher-priority work, only evict when it actually frees enough, retry when memory has already been freed), grounding of AI answers in recorded incident facts, knowledge-base retrieval for every concept Procura implements (EEVDF, MLFQ, Jain's index, fair-share, EWMA/CUSUM, lock ordering, preemption rules), the benchmark module's SWF parser and metric functions, and FastAPI `TestClient` smoke tests. Tests never call a live LLM, even if your `.env` has a key.
 
 Screenshots of every screen, captured from the running system, are in [`docs/screenshots/`](./docs/screenshots/).
 
