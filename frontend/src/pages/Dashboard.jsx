@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import api from "../api.js";
+import ResourceControl from "../components/ResourceControl.jsx";
 
 const STATE_STYLES = {
   NEW: "text-term-dim",
@@ -34,6 +35,9 @@ export default function Dashboard() {
   const [errors, setErrors] = useState([]);
   const [connError, setConnError] = useState(null);
 
+  const [tick, setTick] = useState(0);
+  const refresh = () => setTick((t) => t + 1);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -61,13 +65,13 @@ export default function Dashboard() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, []);
+  }, [tick]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       {connError && (
         <div className="lg:col-span-3 border border-term-red text-term-red text-xs p-2 rounded">
-          Cannot reach backend at http://localhost:8000 ({connError}). Is `uvicorn main:app --reload` running?
+          Cannot reach the backend ({connError}). Is `uvicorn main:app` running, and does VITE_API_URL point at it?
         </div>
       )}
 
@@ -105,7 +109,7 @@ export default function Dashboard() {
               {processes.length === 0 && (
                 <tr>
                   <td colSpan={8} className="px-3 py-6 text-center text-term-dim">
-                    No processes. Run `python seed_data.py` or create one on the Processes page.
+                    No processes yet. Create one on the Processes page.
                   </td>
                 </tr>
               )}
@@ -114,7 +118,11 @@ export default function Dashboard() {
         </div>
       </section>
 
-      <div className="flex flex-col gap-4">
+      <section className="lg:col-span-2">
+        <ResourceControl processes={processes} graph={resources?.waiting_for_graph} onChange={refresh} />
+      </section>
+
+      <div className="flex flex-col gap-4 lg:row-span-2 lg:col-start-3 lg:row-start-1">
         <section className="border border-term-border bg-term-panel rounded p-3">
           <div className="text-term-green text-xs font-bold tracking-wider mb-3">RESOURCE UTILIZATION</div>
           {resources
