@@ -44,6 +44,8 @@ export const api = {
   ask: (question, pid) => request("/ask", { method: "POST", body: JSON.stringify({ question, pid }) }),
 
   getErrors: () => request("/errors"),
+
+  resetDemo: () => request("/demo/reset", { method: "POST" }),
 };
 
 export default api;

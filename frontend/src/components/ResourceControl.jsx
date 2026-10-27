@@ -36,6 +36,7 @@ export default function ResourceControl({ processes, graph, onChange }) {
   const [amount, setAmount] = useState("");
   const [log, setLog] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   const push = (entry) => setLog((l) => [entry, ...l].slice(0, 8));
 
@@ -70,12 +71,37 @@ export default function ResourceControl({ processes, graph, onChange }) {
     setBusy(false);
   };
 
+  const reset = async () => {
+    setBusy(true);
+    try {
+      const res = await api.resetDemo();
+      setLog([{ ok: true, text: `Demo reset: ${res.processes} tasks, no resources held, error log cleared.` }]);
+    } catch (err) {
+      setLog([{ ok: false, text: `Reset failed: ${err.message}` }]);
+    }
+    setConfirming(false);
+    setBusy(false);
+    onChange?.();
+  };
+
   const edges = Object.entries(graph || {}).filter(([, to]) => to && to.length);
   const field = "w-full bg-term-bg border border-term-border rounded px-2 py-1.5";
 
   return (
     <section className="border border-term-border bg-term-panel rounded p-3 text-xs">
-      <div className="text-term-green font-bold tracking-wider mb-1">RESOURCE CONTROL</div>
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <div className="text-term-green font-bold tracking-wider">RESOURCE CONTROL</div>
+        {confirming ? (
+          <div className="flex items-center gap-2">
+            <span className="text-term-amber">Delete all tasks and start over?</span>
+            <button type="button" disabled={busy} onClick={reset} className="border border-term-red text-term-red rounded px-2 py-1 hover:bg-term-red/10 disabled:opacity-50">YES, RESET</button>
+            <button type="button" onClick={() => setConfirming(false)} className="border border-term-border text-term-dim rounded px-2 py-1 hover:bg-term-border/30">CANCEL</button>
+          </div>
+        ) : (
+          <button type="button" disabled={busy} onClick={() => setConfirming(true)} title="Restore the six demo tasks, release every resource, clear the error log"
+            className="border border-term-red text-term-red rounded px-2 py-1 hover:bg-term-red/10 disabled:opacity-50">RESET DEMO</button>
+        )}
+      </div>
       <p className="text-term-dim mb-3">
         Give a process some of a resource, or take it back. A request that does not fit fails and the process starts
         waiting for whoever holds it. When the waits form a cycle, that is a deadlock.

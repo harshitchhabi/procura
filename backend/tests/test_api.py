@@ -194,3 +194,22 @@ def test_empty_reasoning_answer_is_reported_not_hidden(monkeypatch):
 
     monkeypatch.setattr(httpx, "post", lambda *a, **k: _FakeResp(200, {"choices": [{"message": {"content": ""}}]}))
     assert assistant._call_groq("p", "k") == (None, "empty_answer")
+
+
+def test_demo_reset_restores_the_seeded_state():
+    client.post("/processes", json={"name": "Extra task", "burst_time": 5})
+    client.post("/resources/allocate", json={"pid": 1, "resource": "file", "amount": 64})
+    client.post("/resources/allocate", json={"pid": 3, "resource": "database", "amount": 20})
+    client.post("/resources/allocate", json={"pid": 1, "resource": "database", "amount": 5})
+    client.post("/resources/allocate", json={"pid": 3, "resource": "file", "amount": 5})
+    assert client.get("/resources").json()["waiting_for_graph"]
+
+    resp = client.post("/demo/reset")
+    assert resp.status_code == 200 and resp.json() == {"reset": True, "processes": 6}
+
+    res = client.get("/resources").json()
+    assert res["waiting_for_graph"] == {}
+    assert all(u["allocated"] == 0 for u in res["utilization"].values())
+    procs = client.get("/processes").json()
+    assert len(procs) == 6 and {p["state"] for p in procs} == {"READY"}
+    assert client.get("/errors").json() == []

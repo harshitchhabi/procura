@@ -6,6 +6,8 @@ Single-user, local-first, no auth. Run with:
 
 from __future__ import annotations
 
+import contextlib
+import io
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Optional
 
@@ -23,7 +25,7 @@ from os_sim.resource_manager import RESOURCE_NAMES, ResourceManager, describe_am
 from os_sim.states import InvalidTransitionError
 from rag.assistant import answer_question
 from recovery import diagnosis, recovery
-from recovery.detector import run_detection
+from recovery.detector import reset_history, run_detection
 
 load_dotenv()
 
@@ -229,6 +231,21 @@ def release_resource(body: AllocationRequest) -> dict[str, Any]:
 def set_avoidance_mode(body: AvoidanceModeRequest) -> dict[str, Any]:
     resource_manager.avoidance_mode = body.enabled
     return {"avoidance_mode": resource_manager.avoidance_mode}
+
+
+@app.post("/demo/reset")
+def reset_demo() -> dict[str, Any]:
+    """Return the system to its starting demo state: the six seeded tasks, no
+    resources held, nobody waiting, an empty error log. Used by the Dashboard's
+    RESET DEMO button so a demo can be repeated without touching the terminal."""
+    import seed_data
+
+    fresh = ResourceManager()
+    resource_manager.__dict__.update(fresh.__dict__)
+    reset_history()
+    with contextlib.redirect_stdout(io.StringIO()):
+        seed_data.seed()
+    return {"reset": True, "processes": len(process_manager.list_processes())}
 
 
 # ---------------------------------------------------------------------------
